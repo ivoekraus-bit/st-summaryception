@@ -1,0 +1,63 @@
+{
+    "name": "extension-summaryception",
+    "version": "24.28.0",
+    "description": "Layered recursive summarization SillyTavern extension",
+    "type": "module",
+    "main": "index.js",
+    "directories": {
+        "doc": "docs"
+    },
+    "scripts": {
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:coverage": "vitest run --coverage",
+        "lint": "eslint .",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "knip": "knip",
+        "jscpd": "jscpd --config jscpd.json src",
+        "repomix:source-full": "repomix --config repomix-source-full.json",
+        "repomix:source-compressed": "repomix --config repomix-source-compressed.json",
+        "repomix:tests-full": "repomix --config repomix-tests-full.json",
+        "repomix:tests-compressed": "repomix --config repomix-tests-compressed.json",
+        "prepare": "husky"
+    },
+    "lint-staged": {
+        "*.js": [
+            "eslint --fix",
+            "prettier --write"
+        ],
+        "*.{json,md,ts,yaml,yml}": [
+            "prettier --write"
+        ]
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/vadash/Extension-Summaryception.git"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "AGPL-3.0-or-later",
+    "bugs": {
+        "url": "https://github.com/vadash/Extension-Summaryception/issues"
+    },
+    "homepage": "https://github.com/vadash/Extension-Summaryception#readme",
+    "devDependencies": {
+        "@eslint/js": "^9.39.4",
+        "@vitest/coverage-v8": "^3.2.6",
+        "eslint": "^9.39.4",
+        "eslint-config-prettier": "^10.1.8",
+        "eslint-plugin-boundaries": "^6.0.2",
+        "eslint-plugin-jsdoc": "^50.8.0",
+        "eslint-plugin-unicorn": "^65.0.0",
+        "globals": "^17.7.0",
+        "husky": "^9.1.7",
+        "jscpd": "^5.0.11",
+        "knip": "^6.24.0",
+        "lint-staged": "^17.0.8",
+        "prettier": "^3.9.4",
+        "repomix": "^1.16.0",
+        "typescript": "^6.0.3",
+        "vitest": "^3.2.6"
+    }
+}

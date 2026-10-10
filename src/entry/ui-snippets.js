@@ -1,0 +1,511 @@
+import { TOAST_TITLE, layerLabel, listNonEmptyLayers } from '../foundation/constants.js';
+import { refreshUi } from '../foundation/refresh.js';
+import { getChatStore } from '../foundation/chat-store.js';
+import { getSnippetDisplayMeta } from '../core/snippet-metadata.js';
+import {
+    deleteSnippetAt,
+    getSnippetRegenerationTarget,
+    getSnippetTextAt,
+    isRegenerationCandidate,
+    regenerateSnippetAt,
+    updateSnippetTextAt,
+} from '../features/snippet-manager.js';
+import { showBusySummaryToast } from './ui-dialogs.js';
+import { ensureChild } from './ui-dom.js';
+
+let notifyAdapter = null;
+/** @type {import('../core/foreground-gate.js').ForegroundGate | null} */
+let foregroundGate = null;
+/** @type {import('../core/summarizer-queue.js').SummarizerQueue | null} */
+let summarizerQueue = null;
+/** @type {import('../core/summarizer-request.js').SummarizerDispatch | null} */
+let summarizerDispatch = null;
+/** @type {import('../core/summarizer-usage.js').UsageLedger | null} */
+let usageLedger = null;
+
+/**
+ * Core receives the notify adapter, the Foreground Gate, the Summarizer
+ * Queue, the Summarizer Dispatch, and the Usage Ledger only through this
+ * call; they serve the snippet write paths a browser action triggers.
+ * @param {object} options - The runtime instances entry distributes to core.
+ * @param {import('../core/notify.js').NotifyAdapter} options.notify - Toastr-backed adapter distributed to core calls.
+ * @param {import('../core/foreground-gate.js').ForegroundGate} options.gate - Foreground Gate every snippet commit crosses.
+ * @param {import('../core/summarizer-queue.js').SummarizerQueue} options.queue - Summarizer Queue regeneration leases.
+ * @param {import('../core/summarizer-request.js').SummarizerDispatch} options.dispatch - Summarizer Dispatch regeneration requests go through.
+ * @param {import('../core/summarizer-usage.js').UsageLedger} options.usage - Usage Ledger regeneration calls record into.
+ * @returns {void}
+ */
+export function initSnippetBrowser({ notify, gate, queue, dispatch, usage }) {
+    notifyAdapter = notify;
+    foregroundGate = gate;
+    summarizerQueue = queue;
+    summarizerDispatch = dispatch;
+    usageLedger = usage;
+}
+
+/**
+ * @typedef {object} SnippetBrowserItem
+ * @property {string} key - Stable row key for this render pass
+ * @property {number} layerIndex - Source layer index
+ * @property {number} snippetIndex - Source snippet index within the layer
+ * @property {string} text - Snippet body text shown in the browser row
+ * @property {string} meta - Compact source metadata label
+ * @property {boolean} canRedo - Whether the row can be regenerated
+ */
+
+/**
+ * @typedef {object} SnippetBrowserLayer
+ * @property {string} key - Stable layer key for this render pass
+ * @property {number} index - Source layer index
+ * @property {string} label - Layer heading
+ * @property {SnippetBrowserItem[]} snippets - Snippets in display order
+ */
+
+/**
+ * @typedef {object} SnippetBrowserView
+ * @property {boolean} empty - Whether there are no snippets to display
+ * @property {SnippetBrowserLayer[]} layers - Non-empty layers, deepest first
+ */
+
+const SNIPPET_BROWSER_EVENT_NS = '.summaryceptionSnippetBrowser';
+
+/**
+ * The renderer matches rows by stable keys, so focus and scroll position survive re-renders.
+ * @returns {void}
+ */
+export function updateSnippetBrowser() {
+    const store = getChatStore();
+    const browser = $('#sc_snippet_browser');
+    if (!browser.length) {
+        return;
+    }
+
+    bindSnippetBrowserHandlers(browser);
+    renderSnippetBrowser(browser, buildSnippetBrowserViewModel(store));
+}
+
+/**
+ * The view model is DOM-neutral; the renderer consumes only this view, never the store.
+ * @param {ReturnType<typeof getChatStore>} store
+ * @returns {SnippetBrowserView}
+ */
+export function buildSnippetBrowserViewModel(store) {
+    const layers = listNonEmptyLayers(store).map(({ index, layer }) => ({
+        key: getSnippetLayerKey(index),
+        index,
+        label: layerLabel(index),
+        snippets: layer.map((snippet, j) => buildSnippetBrowserItem(snippet, index, j)),
+    }));
+    return { empty: layers.length === 0, layers };
+}
+
+/**
+ * @param {number} layerIndex
+ * @param {number} snippetIndex
+ * @returns {string}
+ */
+export function getSnippetBrowserRowKey(layerIndex, snippetIndex) {
+    return `snippet:${layerIndex}:${snippetIndex}`;
+}
+
+function getSnippetLayerKey(layerIndex) {
+    return `layer:${layerIndex}`;
+}
+
+function buildSnippetBrowserItem(snippet, layerIndex, snippetIndex) {
+    return {
+        key: getSnippetBrowserRowKey(layerIndex, snippetIndex),
+        layerIndex,
+        snippetIndex,
+        text: snippet.text,
+        meta: getSnippetMeta(snippet),
+        canRedo: isRegenerationCandidate(
+            layerIndex,
+            snippetIndex,
+            /** @type {import('../core/summarizer-queue.js').SummarizerQueue} */ (summarizerQueue),
+        ),
+    };
+}
+
+function getSnippetMeta(snippet) {
+    const { sourceCount, mergedCount, fromLayer, promoted } = getSnippetDisplayMeta(snippet);
+    const rangeStr = sourceCount
+        ? `${sourceCount} source messages`
+        : mergedCount
+          ? `merged ${mergedCount} from L${fromLayer}`
+          : '';
+    const seedStr = promoted ? ' promoted' : '';
+    return `${rangeStr}${seedStr}`;
+}
+
+function bindSnippetBrowserHandlers(browser) {
+    if (browser.data('scSnippetBrowserHandlersBound')) {
+        return;
+    }
+
+    browser.data('scSnippetBrowserHandlersBound', true);
+    browser
+        .on(`click${SNIPPET_BROWSER_EVENT_NS}`, '.sc-snippet-text', onSnippetTextClick)
+        .on(`click${SNIPPET_BROWSER_EVENT_NS}`, '.sc-snippet-redo', onSnippetRedoClick)
+        .on(`click${SNIPPET_BROWSER_EVENT_NS}`, '.sc-snippet-delete', onSnippetDeleteClick);
+}
+
+function renderSnippetBrowser(browser, view) {
+    const previousScrollTop = browser.scrollTop();
+
+    if (view.empty) {
+        renderEmptySnippetBrowser(browser);
+        browser.scrollTop(previousScrollTop);
+        return;
+    }
+
+    browser.children('.sc-muted').remove();
+    removeMissingChildElements(
+        browser,
+        '.sc-browser-layer',
+        new Set(view.layers.map((layer) => layer.key)),
+    );
+
+    let cursor = null;
+    for (const layer of view.layers) {
+        const layerEl = getOrCreateChildElement(browser, 'sc-browser-layer', layer.key);
+        updateLayerElement(layerEl, layer);
+        renderLayerSnippets(layerEl, layer);
+        cursor = placeElementAfterCursor(browser, layerEl, cursor);
+    }
+
+    browser.scrollTop(previousScrollTop);
+}
+
+function renderEmptySnippetBrowser(browser) {
+    if (hasFocusedSnippetEdit(browser)) {
+        return;
+    }
+
+    browser.children().remove();
+    $('<div class="sc-muted"></div>').text('No snippets to display.').appendTo(browser);
+}
+
+function removeMissingChildElements(parent, selector, keys) {
+    parent.children(selector).each(function () {
+        const child = $(this);
+        if (!keys.has(child.attr('data-key')) && !hasFocusedSnippetEdit(child)) {
+            child.remove();
+        }
+    });
+}
+
+function getOrCreateChildElement(parent, className, key) {
+    return ensureChild(parent, `.${className}[data-key="${key}"]`, () =>
+        $(`<div class="${className}"></div>`),
+    );
+}
+
+function updateLayerElement(layerEl, layer) {
+    layerEl.attr({ 'data-key': layer.key, 'data-layer': String(layer.index) });
+
+    const title = ensureChild(layerEl, '.sc-browser-layer-title', () =>
+        $('<div class="sc-browser-layer-title"></div>').prependTo(layerEl),
+    );
+    title.text(layer.label);
+}
+
+function renderLayerSnippets(layerEl, layer) {
+    const rowKeys = new Set(layer.snippets.map((snippet) => snippet.key));
+    removeMissingChildElements(layerEl, '.sc-snippet', rowKeys);
+
+    let cursor = layerEl.children('.sc-browser-layer-title').first();
+    for (const snippet of layer.snippets) {
+        const row = getOrCreateChildElement(layerEl, 'sc-snippet', snippet.key);
+        updateSnippetRow(row, snippet);
+        cursor = placeElementAfterCursor(layerEl, row, cursor);
+    }
+}
+
+function placeElementAfterCursor(parent, element, cursor) {
+    if (cursor?.length) {
+        if (!cursor.next().is(element)) {
+            element.insertAfter(cursor);
+        }
+        return element;
+    }
+
+    if (!parent.children().first().is(element)) {
+        parent.prepend(element);
+    }
+    return element;
+}
+
+function updateSnippetRow(row, snippet) {
+    row.attr({
+        'data-key': snippet.key,
+        'data-layer': String(snippet.layerIndex),
+        'data-idx': String(snippet.snippetIndex),
+    });
+
+    if (hasFocusedSnippetEdit(row)) {
+        return;
+    }
+
+    row.children('.sc-snippet-edit').remove();
+    const text = ensureSnippetText(row, snippet);
+    const meta = ensureSnippetMeta(row, snippet);
+    const redo = ensureSnippetRedo(row, snippet);
+    const remove = ensureSnippetDelete(row);
+
+    row.append(text, meta);
+    if (redo) {
+        row.append(redo);
+    }
+    row.append(remove);
+}
+
+function ensureSnippetText(row, snippet) {
+    const text = ensureChild(row, '.sc-snippet-text', () =>
+        $('<span class="sc-snippet-text"></span>'),
+    );
+    text.attr({
+        'data-layer': String(snippet.layerIndex),
+        'data-idx': String(snippet.snippetIndex),
+        title: 'Click to edit',
+    });
+    text.text(snippet.text);
+    return text;
+}
+
+function ensureSnippetMeta(row, snippet) {
+    const meta = ensureChild(row, '.sc-snippet-meta', () =>
+        $('<span class="sc-snippet-meta"></span>'),
+    );
+    meta.text(snippet.meta);
+    return meta;
+}
+
+function ensureSnippetButton(row, className, label) {
+    const button = ensureChild(row, `.${className}`, () =>
+        $(`<button class="${className} menu_button"></button>`),
+    );
+    button.attr({
+        type: 'button',
+        title: label,
+        'aria-label': label,
+    });
+    return button;
+}
+
+function ensureSnippetRedo(row, snippet) {
+    if (!snippet.canRedo) {
+        row.children('.sc-snippet-redo').remove();
+        return null;
+    }
+    const redo = ensureSnippetButton(row, 'sc-snippet-redo', 'Regenerate this snippet');
+    redo.addClass('fa-solid fa-rotate-right');
+    return redo;
+}
+
+function ensureSnippetDelete(row) {
+    const remove = ensureSnippetButton(row, 'sc-snippet-delete', 'Delete this snippet');
+    remove.addClass('fa-solid fa-xmark');
+    return remove;
+}
+
+function hasFocusedSnippetEdit(scope) {
+    return scope.find('.sc-snippet-edit:focus').length > 0;
+}
+
+function onSnippetTextClick() {
+    const position = getSnippetPosition($(this));
+    if (!position) {
+        return;
+    }
+
+    const snippetText = getSnippetTextAt(position.layerIdx, position.snippetIdx);
+    if (snippetText.status !== 'found') {
+        return;
+    }
+
+    startSnippetEdit($(this), position, snippetText.text);
+}
+
+function getSnippetPosition(element) {
+    const row = element.closest('.sc-snippet');
+    const layerIdx = Number.parseInt(String(row.attr('data-layer')), 10);
+    const snippetIdx = Number.parseInt(String(row.attr('data-idx')), 10);
+
+    if (!Number.isInteger(layerIdx) || !Number.isInteger(snippetIdx)) {
+        return null;
+    }
+    return { layerIdx, snippetIdx };
+}
+
+function startSnippetEdit(textEl, position, initialText) {
+    // Enter and blur can both request a finish; the latch keeps it to one run.
+    let finished = false;
+    const textarea = $('<textarea class="sc-snippet-edit"></textarea>').val(initialText);
+    const finish = async (shouldSave) => {
+        if (finished) {
+            return;
+        }
+        finished = true;
+        try {
+            if (shouldSave) {
+                await commitSnippetEdit(textarea, position);
+            }
+        } finally {
+            updateSnippetBrowser();
+        }
+    };
+
+    textarea
+        .on('keydown', async function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                await finish(true);
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                await finish(false);
+            }
+        })
+        .on('blur', async () => {
+            await finish(true);
+        });
+
+    textEl.replaceWith(textarea);
+    resizeSnippetEdit(textarea);
+    textarea.focus().select();
+}
+
+async function commitSnippetEdit(textarea, position) {
+    const result = await updateSnippetTextAt(
+        position.layerIdx,
+        position.snippetIdx,
+        textarea.val(),
+        {
+            gate: /** @type {import('../core/foreground-gate.js').ForegroundGate} */ (
+                foregroundGate
+            ),
+        },
+    );
+    if (result.status === 'updated') {
+        toastr.success('Snippet updated', TOAST_TITLE, {
+            timeOut: 1500,
+        });
+    }
+    // Stay silent for 'unchanged', 'missing', and 'empty': the re-render restores the true state, and an accidental Enter must not toast.
+}
+
+function resizeSnippetEdit(textarea) {
+    const element = textarea[0];
+    if (!element) {
+        return;
+    }
+    element.style.height = 'auto';
+    element.style.height = element.scrollHeight + 'px';
+}
+
+async function onSnippetRedoClick() {
+    const position = getSnippetPosition($(this));
+    if (!position) {
+        return;
+    }
+
+    const target = getSnippetRegenerationTarget(
+        position.layerIdx,
+        position.snippetIdx,
+        /** @type {import('../core/summarizer-queue.js').SummarizerQueue} */ (summarizerQueue),
+    );
+    if (target.status !== 'ready') {
+        handleRegenerationTargetStatus(target);
+        return;
+    }
+    if (!confirm(`Regenerate summary for turns ${target.range[0]}-${target.range[1]}?`)) {
+        return;
+    }
+
+    toastr.info(
+        `Regenerating summary for turns ${target.range[0]}-${target.range[1]}...`,
+        TOAST_TITLE,
+        {
+            timeOut: 3000,
+            progressBar: true,
+        },
+    );
+    await runSnippetRegeneration($(this), position);
+}
+
+async function onSnippetDeleteClick() {
+    const position = getSnippetPosition($(this));
+    if (!position) {
+        return;
+    }
+
+    const result = await deleteSnippetAt(position.layerIdx, position.snippetIdx, {
+        gate: /** @type {import('../core/foreground-gate.js').ForegroundGate} */ (foregroundGate),
+    });
+    if (result.status === 'deleted') {
+        refreshUi();
+        toastr.info(`Snippet removed from Layer ${result.layerIndex}`, TOAST_TITLE);
+    }
+}
+
+function handleRegenerationTargetStatus(target) {
+    if (target.status === 'busy') {
+        showBusySummaryToast();
+        return;
+    }
+    if (target.status === 'unsupported') {
+        toastr.warning(
+            'Only Layer 0 (turn summary) snippets can be regenerated. Promoted meta-summaries have no source turns.',
+            TOAST_TITLE,
+            { timeOut: 5000 },
+        );
+    }
+}
+
+async function runSnippetRegeneration(btn, position) {
+    btn.prop('disabled', true).removeClass('fa-rotate-right').addClass('fa-spinner fa-spin');
+    try {
+        const result = await regenerateSnippetAt(position.layerIdx, position.snippetIdx, {
+            notify: notifyAdapter ?? undefined,
+            gate: /** @type {import('../core/foreground-gate.js').ForegroundGate} */ (
+                foregroundGate
+            ),
+            queue: /** @type {import('../core/summarizer-queue.js').SummarizerQueue} */ (
+                summarizerQueue
+            ),
+            dispatch: /** @type {import('../core/summarizer-request.js').SummarizerDispatch} */ (
+                summarizerDispatch
+            ).call,
+            withRun: /** @type {import('../core/summarizer-usage.js').UsageLedger} */ (usageLedger)
+                .withRun,
+        });
+        handleRegenerationResult(result);
+    } finally {
+        btn.prop('disabled', false).removeClass('fa-spinner fa-spin').addClass('fa-rotate-right');
+    }
+}
+
+function handleRegenerationResult(result) {
+    if (result.status === 'regenerated') {
+        refreshUi();
+        toastr.success(
+            `Snippet regenerated for turns ${result.range[0]}-${result.range[1]}`,
+            TOAST_TITLE,
+            { timeOut: 3000 },
+        );
+        return;
+    }
+    if (result.status === 'empty-source') {
+        toastr.error('Source turns are empty - cannot regenerate.', TOAST_TITLE);
+    } else if (result.status === 'aborted') {
+        toastr.warning('Regeneration stopped - original snippet kept.', TOAST_TITLE);
+    } else if (result.status === 'blocked') {
+        toastr.warning('Regeneration blocked - original snippet kept.', TOAST_TITLE);
+    } else if (result.status === 'failed') {
+        toastr.error('Regeneration failed - original snippet kept.', TOAST_TITLE);
+    } else if (result.status === 'busy') {
+        showBusySummaryToast();
+    } else if (result.status === 'unsupported') {
+        handleRegenerationTargetStatus(result);
+    }
+}

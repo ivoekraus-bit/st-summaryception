@@ -1,0 +1,537 @@
+import { describe, expect, it } from 'vitest';
+
+import { defaultSettings } from '../src/foundation/constants.js';
+import {
+    applyPairFlags,
+    canonicalizePairKey,
+    classifyContinuity,
+    createDefaultContinuity,
+    deriveTurnCount,
+} from '../src/core/continuity-state.js';
+import { formatContinuityBlock } from '../src/features/continuity-injection.js';
+
+const coldStart = () => ({
+    turn_count: 0,
+    bonds: {},
+    agendas: {},
+    gm_notes: [],
+    physics: {
+        location: '',
+        environment: '',
+        posture_and_position: '',
+        contact_points: '',
+        clothing_state: '',
+    },
+});
+
+const validAuditorJson = () =>
+    JSON.stringify({
+        turn_count: 42,
+        bonds: { 'Quipsy↔User': { bond: 11, sparks: 3, grudge: 0 } },
+        agendas: {
+            Quipsy: {
+                task: 'Survive salon waxing',
+                step: { current: 1, max: 3 },
+                status: 'Arrived at salon',
+            },
+        },
+        gm_notes: ['[R] Vova gets aroused easily.', '[S] Quipsy knows the secret.'],
+        physics: {
+            location: 'Salon',
+            environment: 'Busy afternoon',
+            posture_and_position: 'Seated',
+            contact_points: 'Hand on arm',
+            clothing_state: 'Robe',
+        },
+    });
+
+describe('canonicalizePairKey', () => {
+    it.each([
+        ['Quipsy↔User', 'Quipsy↔User'],
+        ['Quipsy ↔ User', 'Quipsy↔User'],
+        ['Quipsy↔ User', 'Quipsy↔User'],
+        [' Quipsy↔User ', 'Quipsy↔User'],
+        ['User↔Quipsy', 'Quipsy↔User'],
+        ['User ↔  Quipsy', 'Quipsy↔User'],
+    ])('canonicalizes %j to %j', (key, expected) => {
+        expect(canonicalizePairKey(key)).toBe(expected);
+    });
+
+    it.each([['Alice↔Bob'], ['Quipsy↔user'], ['broken'], ['↔'], [''], [42], [undefined]])(
+        'rejects %j',
+        (key) => {
+            expect(canonicalizePairKey(key)).toBeNull();
+        },
+    );
+});
+
+describe('classifyContinuity', () => {
+    it('parses valid Auditor JSON into a clean state with no verdicts', () => {
+        const { state, sectionVerdicts } = classifyContinuity(validAuditorJson());
+        expect(sectionVerdicts).toEqual([]);
+        expect(state).toEqual({
+            turn_count: 42,
+            bonds: { 'Quipsy↔User': { bond: 11, sparks: 3, grudge: 0 } },
+            agendas: {
+                Quipsy: {
+                    task: 'Survive salon waxing',
+                    step: { current: 1, max: 3 },
+                    status: 'Arrived at salon',
+                },
+            },
+            gm_notes: ['[R] Vova gets aroused easily.', '[S] Quipsy knows the secret.'],
+            physics: {
+                location: 'Salon',
+                environment: 'Busy afternoon',
+                posture_and_position: 'Seated',
+                contact_points: 'Hand on arm',
+                clothing_state: 'Robe',
+            },
+        });
+    });
+
+    it('verdicts parse and yields no state for JSON no tier can rescue', () => {
+        expect(classifyContinuity('{,,}')).toEqual({
+            state: null,
+            sectionVerdicts: ['parse'],
+            flags: {},
+            notesTruncated: 0,
+            recoveryTier: null,
+        });
+    });
+
+    it('recovers the max-tokens truncation at tier 4 and verdicts the missing sections', () => {
+        // The field scenario: a reply cut off mid-object keeps the sections
+        // it completed, and the dropped ones stay verdict-worthy so the
+        // checkpoint is never committed half-blind.
+        const { state, sectionVerdicts, recoveryTier } = classifyContinuity('{"turn_count": 42,');
+        expect(recoveryTier).toBe(4);
+        expect(state.turn_count).toBe(42);
+        expect([...sectionVerdicts].sort()).toEqual(['agendas', 'bonds', 'gm_notes', 'physics']);
+    });
+
+    it('verdicts parse for refusal prose that no tier can rescue', () => {
+        expect(classifyContinuity('I cannot summarize this.')).toEqual({
+            state: null,
+            sectionVerdicts: ['parse'],
+            flags: {},
+            notesTruncated: 0,
+            recoveryTier: null,
+        });
+    });
+
+    it('classifies a fenced draft cleanly and reports the recovery tier', () => {
+        const fenced = '```json\n' + validAuditorJson() + '\n```';
+        const { state, sectionVerdicts, recoveryTier } = classifyContinuity(fenced);
+        // Section verdicts stay the only semantic gate; the rescue itself is
+        // observable through recoveryTier, not through a verdict.
+        expect(sectionVerdicts).toEqual([]);
+        expect(recoveryTier).toBe(2);
+        expect(state.turn_count).toBe(42);
+    });
+
+    it('classifies prose-wrapped JSON with the recovery tier reported', () => {
+        const wrapped = 'Here is the state:\n' + validAuditorJson() + '\nDone.';
+        const { sectionVerdicts, recoveryTier } = classifyContinuity(wrapped);
+        expect(sectionVerdicts).toEqual([]);
+        expect(recoveryTier).toBe(2);
+    });
+
+    it('emits no recovery verdict for an already-parsed object', () => {
+        const { sectionVerdicts, recoveryTier } = classifyContinuity(
+            JSON.parse(validAuditorJson()),
+        );
+        expect(sectionVerdicts).toEqual([]);
+        expect(recoveryTier).toBeNull();
+    });
+
+    it('verdicts missing sections and keeps the parseable ones', () => {
+        const raw = JSON.stringify({
+            turn_count: 7,
+            bonds: { 'Quipsy↔User': { bond: 0, sparks: 0, grudge: 0 } },
+        });
+        const { state, sectionVerdicts } = classifyContinuity(raw);
+        expect([...sectionVerdicts].sort()).toEqual(['agendas', 'gm_notes', 'physics']);
+        expect(state.turn_count).toBe(7);
+        expect(state.bonds).toEqual({ 'Quipsy↔User': { bond: 0, sparks: 0, grudge: 0 } });
+        expect(state.agendas).toEqual({});
+        expect(state.gm_notes).toEqual([]);
+        expect(state.physics).toEqual(coldStart().physics);
+    });
+
+    it('clamps field damage without emitting verdicts', () => {
+        const raw = JSON.stringify({
+            turn_count: 4.7,
+            bonds: { 'Quipsy↔User': { bond: 100, sparks: -3, grudge: 999 } },
+            agendas: {
+                Quipsy: {
+                    task: 'Train',
+                    step: { current: 5, max: 2 },
+                    body_state: 42,
+                },
+                Mirra: { step: { current: 0, max: 500 } },
+            },
+            gm_notes: ['[T] Deadline Friday'],
+            physics: { location: 'Track', clothing_state: null },
+        });
+        const { state, sectionVerdicts, flags } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual([]);
+        expect(state.turn_count).toBe(5);
+        expect(state.bonds['Quipsy↔User']).toEqual({ bond: 20, sparks: 0, grudge: 99 });
+        // flags stay pre-normalization; only the state is clamped.
+        expect(flags).toEqual({ 'Quipsy↔User': { bond: 100, sparks: -3, grudge: 999 } });
+        expect(state.agendas.Quipsy).toEqual({
+            task: 'Train',
+            step: { current: 2, max: 2 },
+            status: 'None',
+        });
+        // A stored payload's retired field is ignored, never migrated (ADR-0029).
+        expect(Object.keys(state.agendas.Quipsy)).toEqual(['task', 'step', 'status']);
+        expect(state.agendas.Mirra.step).toEqual({ current: 1, max: 99 });
+        expect(state.physics.location).toBe('Track');
+        expect(state.physics.clothing_state).toBe('');
+    });
+
+    it('verdicts turn_count when the section is missing', () => {
+        const raw = JSON.stringify({ bonds: {}, agendas: {}, gm_notes: [], physics: {} });
+        const { state, sectionVerdicts } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual(['turn_count']);
+        expect(state.turn_count).toBe(0);
+    });
+
+    it('verdicts every missing section when the payload is empty', () => {
+        const { state, sectionVerdicts } = classifyContinuity('{}');
+        expect([...sectionVerdicts].sort()).toEqual([
+            'agendas',
+            'bonds',
+            'gm_notes',
+            'physics',
+            'turn_count',
+        ]);
+        expect(state).toEqual(coldStart());
+    });
+
+    it('verdicts bonds on an unknown pair key', () => {
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {
+                'Quipsy↔User': { bond: 0, sparks: 0, grudge: 0 },
+                'Alice↔Bob': { bond: 0, sparks: 0, grudge: 0 },
+            },
+            agendas: {},
+            gm_notes: [],
+            physics: {},
+        });
+        const { sectionVerdicts } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual(['bonds']);
+    });
+
+    it.each(['Quipsy ↔ User', 'Quipsy↔ User', 'User↔Quipsy'])(
+        'classifies drifted key %j as the known canonical pair',
+        (key) => {
+            const raw = JSON.stringify({
+                turn_count: 1,
+                bonds: { [key]: { bond: 2, sparks: 1, grudge: 0 } },
+                agendas: {},
+                gm_notes: [],
+                physics: {},
+            });
+            const { state, sectionVerdicts, flags } = classifyContinuity(raw);
+            expect(sectionVerdicts).toEqual([]);
+            expect(state.bonds).toEqual({ 'Quipsy↔User': { bond: 2, sparks: 1, grudge: 0 } });
+            expect(flags).toEqual({ 'Quipsy↔User': { bond: 2, sparks: 1, grudge: 0 } });
+        },
+    );
+
+    it('merges a drifted duplicate into the single canonical pair record', () => {
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {
+                'Quipsy↔User': { bond: 3, sparks: 0, grudge: 0 },
+                ' Quipsy↔User': { bond: 1, sparks: 0, grudge: 0 },
+            },
+            agendas: {},
+            gm_notes: [],
+            physics: {},
+        });
+        const { state, sectionVerdicts, flags } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual([]);
+        expect(Object.keys(state.bonds)).toEqual(['Quipsy↔User']);
+        expect(state.bonds).toEqual({ 'Quipsy↔User': { bond: 1, sparks: 0, grudge: 0 } });
+        expect(flags).toEqual({ 'Quipsy↔User': { bond: 1, sparks: 0, grudge: 0 } });
+    });
+
+    it('verdicts and keeps uncanonicalizable keys as-is in state and flags', () => {
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {
+                'Alice↔Bob': { bond: 4, sparks: 0, grudge: 0 },
+                broken: { bond: 2, sparks: 0, grudge: 0 },
+            },
+            agendas: {},
+            gm_notes: [],
+            physics: {},
+        });
+        const { state, sectionVerdicts, flags } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual(['bonds']);
+        expect(state.bonds).toEqual({
+            'Alice↔Bob': { bond: 4, sparks: 0, grudge: 0 },
+            broken: { bond: 2, sparks: 0, grudge: 0 },
+        });
+        expect(flags).toEqual({
+            'Alice↔Bob': { bond: 4, sparks: 0, grudge: 0 },
+            broken: { bond: 2, sparks: 0, grudge: 0 },
+        });
+    });
+
+    it('verdicts gm_notes on an unknown note tag', () => {
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {},
+            agendas: {},
+            gm_notes: ['[R] Fine', '[D] Dropped debug tag'],
+            physics: {},
+        });
+        const { sectionVerdicts } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual(['gm_notes']);
+    });
+
+    it('truncates gm_notes to the per-kind budget and reports what it dropped', () => {
+        const notes = [
+            ...Array.from({ length: 6 }, (_, i) => `[R] Reminder ${i + 1}`),
+            ...Array.from({ length: 10 }, (_, i) => `[T] Thread ${i + 1}`),
+            ...Array.from({ length: 14 }, (_, i) => `[S] Secret ${i + 1}`),
+        ];
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {},
+            agendas: {},
+            gm_notes: notes,
+            physics: {},
+        });
+        const { state, sectionVerdicts, notesTruncated } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual([]);
+        expect(state.gm_notes).toHaveLength(24);
+        expect(state.gm_notes.filter((note) => note.startsWith('[R]'))).toHaveLength(4);
+        expect(state.gm_notes.filter((note) => note.startsWith('[T]'))).toHaveLength(8);
+        expect(state.gm_notes.filter((note) => note.startsWith('[S]'))).toHaveLength(12);
+        expect(state.gm_notes[0]).toBe('[R] Reminder 1');
+        // The cap is observable: 2 reminders, 2 threads, and 2 secrets over budget.
+        expect(notesTruncated).toBe(6);
+    });
+
+    it('verdicts gm_notes when an unknown tag follows an over-budget list', () => {
+        const notes = [
+            ...Array.from({ length: 6 }, (_, i) => `[R] Reminder ${i + 1}`),
+            ...Array.from({ length: 10 }, (_, i) => `[T] Thread ${i + 1}`),
+            '[D] Late debug tag',
+        ];
+        const raw = JSON.stringify({
+            turn_count: 1,
+            bonds: {},
+            agendas: {},
+            gm_notes: notes,
+            physics: {},
+        });
+        const { state, sectionVerdicts } = classifyContinuity(raw);
+        expect(sectionVerdicts).toEqual(['gm_notes']);
+        expect(state.gm_notes).toHaveLength(4 + 8);
+    });
+});
+
+describe('createDefaultContinuity', () => {
+    it('matches the cold-start contract', () => {
+        expect(createDefaultContinuity()).toEqual(coldStart());
+    });
+});
+
+describe('applyPairFlags', () => {
+    it('applies plain flag deltas without conversions when turnCount misses both modulos', () => {
+        const pair = { bond: 2, sparks: 0, grudge: 0 };
+        expect(applyPairFlags(pair, { positive_interaction: true, slight: true }, 1)).toEqual({
+            bond: 2,
+            sparks: 1,
+            grudge: 1,
+        });
+    });
+
+    it('applies the rulebook in listed order so an apology wipes a same-turn slight', () => {
+        const pair = { bond: 0, sparks: 0, grudge: 4 };
+        expect(applyPairFlags(pair, { slight: true, apology: true }, 1)).toEqual({
+            bond: 0,
+            sparks: 0,
+            grudge: 0,
+        });
+    });
+
+    it('subtracts bond for insult and betrayal flags', () => {
+        const pair = { bond: 2, sparks: 0, grudge: 0 };
+        expect(applyPairFlags(pair, { insult: true, betrayal: true }, 1)).toEqual({
+            bond: -1,
+            sparks: 0,
+            grudge: 0,
+        });
+    });
+
+    it('converts sparks to bond on turnCount % 5 when sparks reached 7', () => {
+        const pair = { bond: 10, sparks: 7, grudge: 0 };
+        expect(applyPairFlags(pair, { positive_interaction: true }, 10)).toEqual({
+            bond: 11,
+            sparks: 0,
+            grudge: 0,
+        });
+    });
+
+    it('halves the sparks-to-bond gain while grudge is 3 or higher', () => {
+        const pair = { bond: 10, sparks: 7, grudge: 3 };
+        expect(applyPairFlags(pair, { positive_interaction: true }, 10)).toEqual({
+            bond: 10,
+            sparks: 0,
+            grudge: 3,
+        });
+    });
+
+    it('decays sparks by one on turnCount % 5 only when no positive flag fired', () => {
+        expect(applyPairFlags({ bond: 10, sparks: 1, grudge: 0 }, {}, 5)).toEqual({
+            bond: 10,
+            sparks: 0,
+            grudge: 0,
+        });
+        expect(
+            applyPairFlags({ bond: 10, sparks: 3, grudge: 0 }, { positive_interaction: true }, 5),
+        ).toEqual({ bond: 10, sparks: 4, grudge: 0 });
+    });
+
+    it('converts grudge to bond loss on turnCount % 3 when grudge reached 5', () => {
+        expect(applyPairFlags({ bond: 10, sparks: 0, grudge: 5 }, {}, 3)).toEqual({
+            bond: 9,
+            sparks: 0,
+            grudge: 0,
+        });
+        expect(applyPairFlags({ bond: 10, sparks: 0, grudge: 4 }, {}, 3)).toEqual({
+            bond: 10,
+            sparks: 0,
+            grudge: 3,
+        });
+    });
+
+    it('runs both conversions on a turnCount divisible by 15', () => {
+        expect(applyPairFlags({ bond: 10, sparks: 7, grudge: 5 }, {}, 15)).toEqual({
+            bond: 9,
+            sparks: 6,
+            grudge: 0,
+        });
+    });
+
+    it('clamps all counters into the schema ranges', () => {
+        expect(
+            applyPairFlags(
+                { bond: 20, sparks: 99, grudge: 99 },
+                { positive_interaction: true, slight: true },
+                1,
+            ),
+        ).toEqual({ bond: 20, sparks: 99, grudge: 99 });
+        expect(applyPairFlags({ bond: -5, sparks: 0, grudge: 0 }, { insult: true }, 1)).toEqual({
+            bond: -5,
+            sparks: 0,
+            grudge: 0,
+        });
+    });
+
+    it('treats absent flag fields as false and never mutates the input pair', () => {
+        const pair = { bond: 2, sparks: 7, grudge: 5 };
+        const snapshot = { ...pair };
+        const next = applyPairFlags(pair, {}, 15);
+        expect(pair).toEqual(snapshot);
+        expect(next.bond).not.toBe(pair.bond);
+    });
+
+    it('seeds a first-seen pair at neutral zero instead of the clamp floor', () => {
+        expect(applyPairFlags(undefined, { positive_interaction: true }, 1)).toEqual({
+            bond: 0,
+            sparks: 1,
+            grudge: 0,
+        });
+        expect(applyPairFlags(undefined, { insult: true }, 1)).toEqual({
+            bond: -1,
+            sparks: 0,
+            grudge: 0,
+        });
+    });
+
+    it('still clamps fields of an existing pair with damaged values', () => {
+        expect(applyPairFlags({ bond: 999, sparks: -3, grudge: 50 }, {}, 1)).toEqual({
+            bond: 20,
+            sparks: 0,
+            grudge: 50,
+        });
+    });
+});
+
+describe('gate ladder rendering', () => {
+    const stateWithBond = (bond) => ({
+        turn_count: 1,
+        bonds: { 'X↔User': { bond, sparks: 0, grudge: 0 } },
+        agendas: {},
+        gm_notes: [],
+        physics: coldStart().physics,
+    });
+
+    it.each([
+        [-5, null],
+        [0, null],
+        [1, null],
+        [2, 'hug'],
+        [4, 'hug'],
+        [5, 'handhold'],
+        [7, 'handhold'],
+        [8, 'kiss'],
+        [11, 'kiss'],
+        [12, 'intimacy'],
+        [20, 'intimacy'],
+    ])('renders bond %j with gate %j through formatContinuityBlock', (bond, gate) => {
+        const block = formatContinuityBlock(stateWithBond(bond));
+        expect(block).toContain(
+            `X↔User: BOND ${bond < 0 ? '' : '+'}${bond} (Sparks: 0, Grudge: 0)`,
+        );
+        if (gate === null) {
+            expect(block).not.toContain('Gate:');
+        } else {
+            expect(block).toContain(`; Gate: ${gate}`);
+        }
+    });
+});
+
+describe('continuity state log defaults', () => {
+    it('defaults both continuity state log flags to false', () => {
+        expect(defaultSettings.continuityStateLogMode).toBe(false);
+        expect(defaultSettings.continuityStateLogFullMode).toBe(false);
+    });
+});
+
+describe('deriveTurnCount', () => {
+    it('counts every assistant turn in the chat', () => {
+        const chat = [{ is_user: true }, {}, { is_user: true }, {}, {}];
+        expect(deriveTurnCount(chat)).toBe(3);
+    });
+
+    it('counts a ghosted reply, which carries the host hide flag', () => {
+        const chat = [
+            { is_user: true },
+            { is_system: true, sc_id: 'ghosted' },
+            { is_user: true },
+            { sc_id: 'live' },
+        ];
+        expect(deriveTurnCount(chat)).toBe(2);
+    });
+
+    it('ignores only the user turn and falsy entries', () => {
+        const chat = [{ is_user: true }, null, { is_system: true }, {}];
+        expect(deriveTurnCount(chat)).toBe(2);
+    });
+
+    it('derives zero from an empty or missing chat', () => {
+        expect(deriveTurnCount([])).toBe(0);
+        expect(deriveTurnCount(undefined)).toBe(0);
+    });
+});

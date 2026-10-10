@@ -1,0 +1,326 @@
+import { NOTIFY_EVENTS } from '../foundation/constants.js';
+import { debug, error as logError, info, trace } from '../foundation/logger.js';
+import { RETRY_CONFIG, ROUTE_CYCLE_FAILURE_BUDGET, sleepOrAbort } from '../foundation/retry.js';
+import { silentAdapter } from './notify.js';
+import { ROUTE_CYCLE_RETRY_ATTEMPT, computeRetryDelay } from './request-retry-policy.js';
+import { createAttemptSession } from './request-series.js';
+
+/**
+ * The Run Outcome of one summarizer request. Completed outcomes carry the
+ * accepted text and the profile it was accepted under, so callers never
+ * re-validate the text.
+ */
+
+function buildCompletedOutcome(text, profile) {
+    return {
+        status: /** @type {'completed'} */ ('completed'),
+        text,
+        profile,
+    };
+}
+
+function buildAbortedOutcome() {
+    return { status: /** @type {'aborted'} */ ('aborted') };
+}
+
+function buildBlockedOutcome() {
+    return { status: /** @type {'blocked'} */ ('blocked') };
+}
+
+function buildFailedOutcome(attempts) {
+    return { status: /** @type {'failed'} */ ('failed'), attempts };
+}
+
+function buildRouteCycleResult(result) {
+    return { status: /** @type {'done'} */ ('done'), result };
+}
+
+function shouldTryNextRoute(result) {
+    return result.status === 'hard-failover' || isRetryExhaustion(result);
+}
+
+/**
+ * A retryable series ending implies the retry budget ran out: the series
+ * surfaces `rejected` or `failed{retryable}` exclusively after exhausting
+ * its budget, and `hard-failover` after skipping it.
+ * @param {import('./request-series.js').RouteSeriesResult} result
+ * @returns {boolean}
+ */
+function isRetryExhaustion(result) {
+    return (
+        result.status === 'rejected' || (result.status === 'failed' && result.retryable === true)
+    );
+}
+
+/**
+ * Terminal hops feed the "after N attempts" failure log; completed and
+ * aborted hops carry no count into it.
+ * @param {import('./request-series.js').RouteSeriesResult} result
+ * @returns {number}
+ */
+function hopAttempts(result) {
+    return result.status === 'completed' || result.status === 'aborted' ? 0 : result.attempts;
+}
+
+/**
+ * Every non-completed series ending carries the attempt's error.
+ * @param {import('./request-series.js').RouteSeriesResult} result
+ * @returns {SummarizerFailureError}
+ */
+function seriesError(result) {
+    return /** @type {SummarizerFailureError} */ (result.error);
+}
+
+function logPrimaryProbe(healthBucket, maxRetries) {
+    if (maxRetries !== 0) {
+        return;
+    }
+
+    debug(
+        `Primary summarizer previously exhausted retries for ${healthBucket}; ` +
+            'probing once before fallback.',
+    );
+}
+
+function logFallbackRoute(lastResult, connection) {
+    info(
+        `Primary summarizer failed${
+            lastResult.status === 'hard-failover'
+                ? ' (hard network failure)'
+                : ' after retryable errors'
+        }; trying fallback ` + `(${connection.connectionSource}).`,
+    );
+}
+
+/**
+ * Run summarizer provider requests with retry and fallback routing.
+ */
+export class RequestRunner {
+    constructor() {
+        this.primaryRetryExhaustedBuckets = new Set();
+    }
+
+    /**
+     * Run retry attempts until success, abort, non-retryable error, or exhaustion.
+     * @param {object} p
+     * @param {string} p.prompt - Fully substituted user prompt
+     * @param {string} p.repairPrompt - Fully substituted Layer 0 repair prompt
+     * @param {AbortSignal} p.signal - Abort signal
+     * @param {import('./call-profile.js').CallProfile} p.profile - Call profile resolved at dispatch
+     * @param {import('./notify.js').NotifyAdapter} [p.notify] - Notify adapter for mid-run notices; defaults to the silent adapter
+     * @param {import('./summarizer-usage.js').UsageLedger} p.usage - Usage Ledger the Call Session records token usage into
+     * @returns {Promise<import('./run-outcome.js').RunOutcome>} Structured outcome; `completed` carries the summary text and the resolved profile.
+     */
+    async run({ prompt, repairPrompt, signal, profile, notify = silentAdapter, usage }) {
+        // One Call Session per summarizer call: it carries the call facts
+        // across every route cycle and hop; the failure budget stays here.
+        const session = createAttemptSession({
+            prompt,
+            repairPrompt,
+            signal,
+            profile,
+            notify,
+            usage,
+        });
+        let routeCycleFailures = 0;
+
+        while (true) {
+            if (session.signal.aborted) {
+                return abortRun(session.notify);
+            }
+
+            const cycle = await this.runRouteCycle(session);
+
+            if (cycle.status === 'retry') {
+                routeCycleFailures += 1;
+                if (routeCycleFailures >= ROUTE_CYCLE_FAILURE_BUDGET) {
+                    return cycle.outcome;
+                }
+                continue;
+            }
+
+            return cycle.result;
+        }
+    }
+
+    async runRouteCycle(session) {
+        const { healthBucket, routes } = session.profile.policy;
+        let last = null;
+        let attempts = 0;
+
+        for (let index = 0; index < routes.length; index++) {
+            const route = routes[index];
+            let attemptState;
+            if (index === 0) {
+                const probe =
+                    routes.length > 1 && this.primaryRetryExhaustedBuckets.has(healthBucket);
+                attemptState = {
+                    routeLabel: 'primary',
+                    maxRetries: probe ? 0 : RETRY_CONFIG.maxRetries,
+                };
+                logPrimaryProbe(healthBucket, attemptState.maxRetries);
+            } else {
+                logFallbackRoute(last, route.connection);
+                attemptState = { routeLabel: 'fallback', maxRetries: RETRY_CONFIG.maxRetries };
+            }
+
+            last = await session.runSeries(route, {
+                routeLabel: attemptState.routeLabel,
+                maxRetries: attemptState.maxRetries,
+            });
+            attempts += hopAttempts(last);
+
+            const terminal = this.resolveTerminalHopResult(last, {
+                index,
+                attempts,
+                healthBucket,
+                session,
+            });
+            if (terminal) {
+                return terminal;
+            }
+            if (index < routes.length - 1 && shouldTryNextRoute(last)) {
+                continue;
+            }
+            break;
+        }
+
+        // resolveCallProfile always yields at least a primary hop, so the loop set last.
+        const settled = /** @type {NonNullable<typeof last>} */ (last);
+
+        if (routes.length === 1) {
+            this.primaryRetryExhaustedBuckets.delete(healthBucket);
+            return buildRouteCycleResult(
+                failSummarization(
+                    seriesError(settled),
+                    { retriesExhausted: isRetryExhaustion(settled), attempts },
+                    session.notify,
+                ),
+            );
+        }
+
+        await notifyRouteCycleFailedAndWait({
+            healthBucket,
+            signal: session.signal,
+            notify: session.notify,
+        });
+        this.primaryRetryExhaustedBuckets.delete(healthBucket);
+        return {
+            status: /** @type {'retry'} */ ('retry'),
+            result: null,
+            outcome: failSummarization(seriesError(settled), { attempts }, session.notify),
+        };
+    }
+
+    /**
+     * Classify one hop's Route Series Result into a terminal route-cycle
+     * result, or return null when the walk may consider the next hop. Only a
+     * primary-hop success clears the retry-exhausted bucket; only a
+     * primary-hop exhaustion sets it, so the next request probes the primary
+     * route once.
+     * @param {import('./request-series.js').RouteSeriesResult} last
+     * @param {{ index: number, attempts: number, healthBucket: string, session: object }} hop
+     * @returns {object | null}
+     */
+    resolveTerminalHopResult(last, { index, attempts, healthBucket, session }) {
+        if (last.status === 'completed') {
+            if (index === 0) {
+                this.primaryRetryExhaustedBuckets.delete(healthBucket);
+            }
+            return buildRouteCycleResult(buildCompletedOutcome(last.text, session.profile));
+        }
+        if (last.status === 'aborted') {
+            return buildRouteCycleResult(abortRun(session.notify));
+        }
+        if (!isRetryExhaustion(last) && last.status !== 'hard-failover') {
+            return buildRouteCycleResult(
+                failSummarization(
+                    seriesError(last),
+                    { retriesExhausted: false, attempts },
+                    session.notify,
+                ),
+            );
+        }
+        if (index === 0 && isRetryExhaustion(last)) {
+            this.primaryRetryExhaustedBuckets.add(healthBucket);
+        }
+        return null;
+    }
+}
+
+/**
+ * Cycle-level policy: both hops of the Narrative Chain failed, so notify,
+ * wait the cycle backoff, and let the runner restart from primary. It lives
+ * with the runner that walks the route cycle, not inside a Call Session that
+ * only runs one hop.
+ * @param {object} p
+ * @param {string} p.healthBucket - Health bucket the cycle exhausted.
+ * @param {AbortSignal} p.signal - Signal that cuts the wait short.
+ * @param {import('./notify.js').NotifyAdapter} p.notify - Notify adapter threaded from the runner.
+ * @returns {Promise<void>}
+ */
+export async function notifyRouteCycleFailedAndWait({ healthBucket, signal, notify }) {
+    const delay = computeRetryDelay(new Error('Both routes failed'), ROUTE_CYCLE_RETRY_ATTEMPT);
+    const delaySec = (delay / 1000).toFixed(1);
+    info(
+        `Both primary and fallback exhausted for ${healthBucket}; ` +
+            `resetting health state and retrying primary in ${delaySec}s.`,
+    );
+    notify.transient({
+        kind: NOTIFY_EVENTS.ROUTE_CYCLE_WAIT,
+        delayMs: delay,
+    });
+    await sleepOrAbort(delay, signal);
+}
+
+/**
+ * Stopping a run is not a failure. Entry renders the notice from this
+ * structured event (ADR-0019).
+ * @param {import('./notify.js').NotifyAdapter} notify - Notify adapter threaded from the request series
+ * @returns {import('./run-outcome.js').RunOutcome} The aborted outcome
+ */
+function abortRun(notify) {
+    debug('Summarization aborted by user.');
+    notify.transient({ kind: NOTIFY_EVENTS.RUN_ABORTED });
+    return buildAbortedOutcome();
+}
+
+/**
+ * @typedef {Error & {
+ *   status?: number,
+ *   response?: { status?: number },
+ *   easyContextGuard?: boolean,
+ * }} SummarizerFailureError
+ */
+
+/**
+ * The guard-block branch emits no event because the attempt layer already
+ * emitted the guard event.
+ * @param {SummarizerFailureError} lastError
+ * @param {{ retriesExhausted?: boolean, attempts?: number }} [options]
+ * @param {import('./notify.js').NotifyAdapter} notify - Notify adapter threaded from the request series
+ * @returns {import('./run-outcome.js').RunOutcome} The blocked or failed outcome
+ */
+function failSummarization(
+    lastError,
+    { retriesExhausted = true, attempts = 0 } = {},
+    notify = silentAdapter,
+) {
+    if (lastError?.easyContextGuard) {
+        logError('Summarization blocked by Easy context guard:', lastError);
+        trace('<<< EXITING callSummarizer WITH EASY CONTEXT GUARD');
+        return buildBlockedOutcome();
+    }
+
+    const status = lastError?.status || lastError?.response?.status || '';
+    const retryText = retriesExhausted ? ` after ${attempts} attempts` : '';
+    logError(`Summarization failed${retryText}:`, lastError);
+    notify.transient({
+        kind: NOTIFY_EVENTS.RUN_FAILED,
+        retriesExhausted,
+        attempts,
+        status: status || null,
+    });
+    trace('<<< EXITING callSummarizer WITH FAILURE');
+    return buildFailedOutcome(attempts);
+}

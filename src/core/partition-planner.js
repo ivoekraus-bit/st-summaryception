@@ -1,0 +1,221 @@
+import { defaultSettings } from '../foundation/constants.js';
+import { countedChatMessages } from './chatutils.js';
+import { addBudgetStats, createBudgetStats } from './token-count.js';
+
+// Floor for Layer 0 partition size: cuts and configured caps never produce a
+// smaller source range.
+const MIN_L0_SOURCE_TOKENS = 2000;
+// Ratio a partition may exceed its token cap by before a cut becomes mandatory.
+const L0_SOURCE_OVERSHOOT_TOLERANCE = 1.15;
+
+/**
+ * @typedef {object} SourcePartition
+ * @property {import('./chatutils.js').AssistantTurn[]} turns - Assistant turns included in this source slice.
+ * @property {number} sourceStartIdx - Inclusive first chat index in the source slice.
+ * @property {number} sourceEndIdx - Inclusive final chat index in the source slice.
+ * @property {import('./token-count.js').BudgetStats} stats - Token stats for the source slice.
+ */
+
+/**
+ * Build token-balanced Layer 0 source partitions on assistant-turn boundaries,
+ * capped at settings.maxSummaryTurns turns per partition.
+ * @param {object} p
+ * @param {ChatMessage[]} p.chat
+ * @param {number} p.sourceStartIdx
+ * @param {import('./chatutils.js').AssistantTurn[]} p.assistantTurns
+ * @param {ExtensionSettings} p.settings
+ * @param {number} [p.finalSourceEndIdx]
+ * @returns {Promise<SourcePartition[]>}
+ */
+export async function buildLayer0Partitions({
+    chat,
+    sourceStartIdx,
+    assistantTurns,
+    settings,
+    finalSourceEndIdx,
+}) {
+    const turns = assistantTurns.filter((turn) => turn.index >= sourceStartIdx);
+    if (turns.length === 0) {
+        return [];
+    }
+
+    const segments = await buildTurnSegments({
+        chat,
+        sourceStartIdx,
+        turns,
+        settings,
+        finalSourceEndIdx,
+    });
+    const totalTokens = sumSegmentTokens(segments);
+    const maxTokens = getMaxL0SourceTokens(settings);
+    const targetTokens = getTargetSourceTokens(settings);
+    const maxTurns = settings.maxSummaryTurns;
+
+    if (
+        turns.length <= maxTurns &&
+        totalTokens <= Math.ceil(targetTokens * L0_SOURCE_OVERSHOOT_TOLERANCE)
+    ) {
+        return [buildPartitionFromSegments(segments)];
+    }
+
+    const tokenPartitions = Math.ceil(totalTokens / targetTokens);
+    const turnPartitions = Math.ceil(turns.length / maxTurns);
+    const partitionCount = Math.max(1, tokenPartitions, turnPartitions);
+    const softTarget = Math.min(maxTokens, Math.ceil(totalTokens / partitionCount));
+    return buildBalancedPartitions(segments, softTarget, maxTokens, maxTurns);
+}
+
+/**
+ * Count source tokens for an inclusive chat range using Layer 0 passage rules.
+ * @param {ChatMessage[]} chat
+ * @param {number} startIdx
+ * @param {number} endIdx
+ * @param {ExtensionSettings} settings
+ * @returns {Promise<import('./token-count.js').BudgetStats>}
+ */
+export async function countSourceRangeTokens(chat, startIdx, endIdx, settings) {
+    const stats = createBudgetStats();
+    if (endIdx < startIdx) {
+        return stats;
+    }
+
+    for await (const entry of countedChatMessages(chat, startIdx, endIdx, settings)) {
+        addBudgetStats(stats, entry.stats);
+    }
+
+    return stats;
+}
+
+async function buildTurnSegments({ chat, sourceStartIdx, turns, settings, finalSourceEndIdx }) {
+    const segments = [];
+    let segmentStart = sourceStartIdx;
+
+    for (let i = 0; i < turns.length; i++) {
+        const turn = turns[i];
+        const isFinal = i === turns.length - 1;
+        const endIdx = isFinal ? getFinalEndIdx(turn.index, finalSourceEndIdx) : turn.index;
+        segments.push({
+            turn,
+            sourceStartIdx: segmentStart,
+            sourceEndIdx: endIdx,
+            stats: await countSourceRangeTokens(chat, segmentStart, endIdx, settings),
+        });
+        segmentStart = endIdx + 1;
+    }
+
+    return segments;
+}
+
+function sumSegmentTokens(segments) {
+    return segments.reduce((total, segment) => total + segment.stats.finalTokens, 0);
+}
+
+function buildBalancedPartitions(segments, softTarget, maxTokens, maxTurns) {
+    const partitions = [];
+    let current = [];
+    let currentTokens = 0;
+
+    for (const segment of segments) {
+        const segmentTokens = segment.stats.finalTokens;
+        if (
+            shouldCutBeforeSegment({
+                current,
+                currentTokens,
+                segmentTokens,
+                softTarget,
+                maxTokens,
+                maxTurns,
+            })
+        ) {
+            partitions.push(buildPartitionFromSegments(current));
+            current = [];
+            currentTokens = 0;
+        }
+
+        current.push(segment);
+        currentTokens += segmentTokens;
+    }
+
+    if (current.length > 0) {
+        partitions.push(buildPartitionFromSegments(current));
+    }
+
+    return partitions;
+}
+
+function shouldCutBeforeSegment({
+    current,
+    currentTokens,
+    segmentTokens,
+    softTarget,
+    maxTokens,
+    maxTurns,
+}) {
+    if (current.length === 0) {
+        return false;
+    }
+
+    if (current.length >= maxTurns) {
+        return true;
+    }
+
+    const combinedTokens = currentTokens + segmentTokens;
+    if (combinedTokens > Math.ceil(maxTokens * L0_SOURCE_OVERSHOOT_TOLERANCE)) {
+        return true;
+    }
+
+    const currentDistance = Math.abs(softTarget - currentTokens);
+    const combinedDistance = Math.abs(softTarget - combinedTokens);
+    return (
+        currentTokens >= MIN_L0_SOURCE_TOKENS &&
+        combinedTokens >= softTarget &&
+        currentDistance <= combinedDistance
+    );
+}
+
+function buildPartitionFromSegments(segments) {
+    const stats = createBudgetStats();
+    for (const segment of segments) {
+        addBudgetStats(stats, segment.stats);
+    }
+
+    return {
+        turns: segments.map((segment) => segment.turn),
+        sourceStartIdx: segments[0].sourceStartIdx,
+        sourceEndIdx: segments[segments.length - 1].sourceEndIdx,
+        stats,
+    };
+}
+
+/**
+ * The final segment may end past its turn at the passage end, but only when
+ * that end lies beyond the turn.
+ * @param {number} turnIndex
+ * @param {number | undefined} finalSourceEndIdx
+ * @returns {number}
+ */
+function getFinalEndIdx(turnIndex, finalSourceEndIdx) {
+    if (
+        typeof finalSourceEndIdx === 'number' &&
+        Number.isInteger(finalSourceEndIdx) &&
+        finalSourceEndIdx >= turnIndex
+    ) {
+        return finalSourceEndIdx;
+    }
+    return turnIndex;
+}
+
+function getMaxL0SourceTokens(settings) {
+    const configured = Number(settings.maxL0SourceTokens);
+    if (!Number.isFinite(configured) || configured <= 0) {
+        return defaultSettings.maxL0SourceTokens;
+    }
+    return Math.max(MIN_L0_SOURCE_TOKENS, Math.round(configured));
+}
+
+function getTargetSourceTokens(settings) {
+    const cap = getMaxL0SourceTokens(settings);
+    const budget = Number(settings.minSummaryBudget);
+    const safeBudget = Number.isFinite(budget) ? budget : cap;
+    return Math.min(cap, Math.max(MIN_L0_SOURCE_TOKENS, Math.round(safeBudget)));
+}

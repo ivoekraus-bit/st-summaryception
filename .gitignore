@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Generated reports
+report/
+jscpd-badge.svg
+repomix-*.md
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# IDE / Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Build / dist
+dist/
+build/
+coverage/
+*.log
+
+# TypeScript build output
+*.tsbuildinfo
+.tsbuildinfo
+
+# MORE
+.claude/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
+
+/tmp/

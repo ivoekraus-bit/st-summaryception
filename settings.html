@@ -1,424 +1,1241 @@
 <div class="sc-settings">
     <div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
-            <b>🧠 Summaryception</b>
+        <div class="inline-drawer-toggle inline-drawer-header sc-drawer-header">
+            <div class="sc-title">
+                <span class="fa-solid fa-brain"></span>
+                <b>Summaryception</b>
+            </div>
             <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-
-            <!-- ═══ Enable ═══ -->
-            <div class="sc-row">
-                <label class="checkbox_label" for="sc_enabled">
-                    <input type="checkbox" id="sc_enabled" />
-                    <span>Enable Summaryception</span>
-                </label>
-            </div>
-
-            <!-- ═══ Pause ═══ -->
-            <div class="sc-row">
-                <label class="checkbox_label" for="sc_pause_summarization">
-                    <input type="checkbox" id="sc_pause_summarization" />
-                    <span>Pause Summarization</span>
-                    <small class="sc-hint">Stop processing new turns while keeping existing summaries injected. Preserves prompt cache hits. Unpause or use Force Summarize to catch up.</small>
-                </label>
-            </div>
-
-            <!-- ═══ Stop hiding verbatim turns ═══ -->
-            <label class="checkbox_label" for="sc_disable_ghosting">
-                <input type="checkbox" id="sc_disable_ghosting" />
-                <span>Disable Message Hiding</span>
-                <small class="sc-hint">Messages will still be summarized and excluded from LLM context, but won't be visually hidden. Useful for compatibility with other extensions (QVink, MemoryBooks, etc.).</small>
-            </label>
-
-            <!-- ═══ Actions ═══ -->
-            <div class="sc-button-row">
-                <button id="sc_force_summarize" class="menu_button">
-                    <i class="fa-solid fa-bolt"></i> Force Summarize Now
-                </button>
-                <button id="sc_stop_summarize" class="menu_button menu_button_danger">
-                    <i class="fa-solid fa-stop"></i> Stop
-                </button>
-                <button id="sc_repair" class="menu_button">
-                    <i class="fa-solid fa-wrench"></i> Repair Orphans
-                </button>
-            </div>
-
-            <hr class="sc-divider" />
-
-            <!-- ═══ Snippet Browser ═══ -->
-            <h4 class="sc-section-title">🗂️ Snippet Browser</h4>
-            <div id="sc_snippet_browser" class="sc-snippet-browser"></div>
-
-            <hr class="sc-divider" />
-
-            <!-- ═══ Preview ═══ -->
-            <h4 class="sc-section-title">👁️ Injection Preview</h4>
-            <textarea id="sc_preview" class="text_pole sc-textarea sc-preview" rows="6" readonly></textarea>
-            <div class="sc-button-row">
-                <button id="sc_refresh_preview" class="menu_button">
-                    <i class="fa-solid fa-rotate"></i> Refresh
-                </button>
-            </div>
-
-            <div class="sc-button-row">
-                <button id="sc_import" class="menu_button">
-                   <i class="fa-solid fa-download"></i> Import Memory
-                </button>
-                <button id="sc_export" class="menu_button">
-                    <i class="fa-solid fa-upload"></i> Export Memory
-                </button>
-                <button id="sc_clear_memory" class="menu_button menu_button_danger">
-                    <i class="fa-solid fa-trash"></i> Clear Memory
-                </button>
-            </div>
-
-            <hr class="sc-divider" />
-
-            <!-- ═══ Layer Stats ═══ -->
-            <h4 class="sc-section-title">📊 Layer Stats</h4>
-            <div id="sc_layer_stats" class="sc-stats-box"></div>
-
-            <hr class="sc-divider" />
-
-            <!-- ═══ Advanced Settings ═══ -->
-            <div class="inline-drawer">
-                <div class="inline-drawer-toggle inline-drawer-header">
-                    <b>⚙️ Advanced Settings</b>
-                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+            <section class="sc-section sc-enable-section">
+                <input type="checkbox" id="sc_enabled" class="sc-sr-only" data-sc-setting="enabled" />
+                <div class="sc-mode-grid sc-ui-mode-grid" role="radiogroup" aria-label="Summaryception mode">
+                    <label class="checkbox_label sc-mode-card" for="sc_mode_off">
+                        <span class="sc-toggle-icon fa-solid fa-power-off"></span>
+                        <span class="sc-toggle-copy">
+                            <span class="sc-toggle-title">Off</span>
+                            <small class="sc-hint">No memory is injected and nothing summarizes in the background. Your chat stays raw.</small>
+                        </span>
+                        <input type="radio" id="sc_mode_off" name="sc_ui_mode" value="off" data-sc-setting="uiMode" />
+                    </label>
+                    <label class="checkbox_label sc-mode-card" for="sc_mode_easy">
+                        <span class="sc-toggle-icon fa-solid fa-gauge-high"></span>
+                        <span class="sc-toggle-copy">
+                            <span class="sc-toggle-title">Easy</span>
+                            <small class="sc-hint">Picks safe context limits for you and leaves the main controls on screen.</small>
+                        </span>
+                        <input type="radio" id="sc_mode_easy" name="sc_ui_mode" value="easy" data-sc-setting="uiMode" />
+                    </label>
+                    <label class="checkbox_label sc-mode-card" for="sc_mode_advanced">
+                        <span class="sc-toggle-icon fa-solid fa-sliders"></span>
+                        <span class="sc-toggle-copy">
+                            <span class="sc-toggle-title">Advanced</span>
+                            <small class="sc-hint">Everything is exposed: routing, prompts, diagnostics, and engine tuning.</small>
+                        </span>
+                        <input type="radio" id="sc_mode_advanced" name="sc_ui_mode" value="advanced" data-sc-setting="uiMode" />
+                    </label>
                 </div>
-                <div class="inline-drawer-content">
-
-                    <!-- ═══════════════════════════════════════════════════════════════════
-                         Summarizer Connection Settings
-                         Insert this inside the Advanced Settings inline-drawer-content
-                         ═══════════════════════════════════════════════════════════════════ -->
-                    <div id="summaryception_connection_settings" class="summaryception-connection-section">
-                        <hr class="sysHR">
-                        <div class="summaryception-section-header">
-                            <span class="fa-solid fa-bolt"></span>
-                            <span>Summarizer Connection</span>
-                        </div>
-                        <small class="summaryception-help-text">
-                            Choose which LLM connection to use for summarization. Use a cheaper/faster model
-                            to save costs while keeping your main API for RP.
-                        </small>
-
-                        <div class="summaryception-setting-row">
-                            <label for="sc_summarizer_response_length">
-                                <span>Summarizer Response Length</span>
-                                <small>Override max response tokens for summarizer calls (Default/Profile modes). 0 = use your preset's value. If you get "max_tokens > 4096 must have stream=true" errors, set to 4096. For reasoning models, ensure this is high enough for thinking + output.</small>
+            </section>
+            <div id="sc_off_content" class="sc-section sc-off-panel" style="display: none;">
+                <div class="sc-section-header">
+                    <h4 class="sc-section-title">
+                        <span class="fa-solid fa-power-off"></span>
+                        Summaryception Off
+                    </h4>
+                </div>
+                <small class="sc-help-text">Memory injection and automatic summarizing are disabled. Existing summaries remain stored. Settings below are still editable and apply when you turn the extension back on.</small>
+            </div>
+            <div id="sc_easy_content" style="display: none;">
+                <div class="sc-console-header" aria-label="Summaryception easy status">
+                    <span id="sc_easy_status_mode" class="sc-console-value">Easy</span>
+                    <span class="sc-status-separator" aria-hidden="true">·</span>
+                    <span id="sc_easy_status_worker" class="sc-console-value">Idle</span>
+                    <span class="sc-status-separator" aria-hidden="true">·</span>
+                    <span class="sc-console-value"><strong id="sc_easy_status_snippets">0</strong> snippets</span>
+                    <span class="sc-status-separator" aria-hidden="true">·</span>
+                    <span class="sc-console-value"><strong id="sc_easy_status_ghosted">0</strong> ghosted</span>
+                </div>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-plug"></span>
+                            Easy Setup
+                        </h4>
+                    </div>
+                    <div class="sc-settings-grid">
+                        <div class="sc-setting-row">
+                            <label for="sc_easy_connection_source">
+                                <span>Fast Summarizer</span>
+                                <small>Main route for raw chat summaries.</small>
                             </label>
-                            <input id="sc_summarizer_response_length" type="number" class="text_pole" min="0" step="100" value="0" placeholder="0 = use preset default" />
-                        </div>
-
-                        <!-- Connection Source Selector -->
-                        <div class="summaryception-setting-row">
-                            <label for="summaryception_connection_source">
-                                <span>Connection Source</span>
-                            </label>
-                            <select id="summaryception_connection_source" class="text_pole">
-                                <option value="default">Default (Main API)</option>
+                            <select id="sc_easy_connection_source" class="text_pole" data-sc-setting="connectionSource">
+                                <option value="default">Main API</option>
                                 <option value="profile">Connection Profile</option>
-                                <option value="ollama">Ollama (Local)</option>
-                                <option value="openai">OpenAI Compatible</option>
                             </select>
                         </div>
-
-                        <!-- ── Connection Profile Sub-panel ── -->
-                        <div id="summaryception_profile_settings" class="summaryception-sub-panel" style="display: none;">
-                            <div class="summaryception-setting-row">
+                        <div class="sc-setting-row">
+                            <label for="sc_easy_merge_connection_source">
+                                <span>Smart Deep Memory</span>
+                                <small>Optional route for Layer 1+ merges.</small>
+                            </label>
+                            <select id="sc_easy_merge_connection_source" class="text_pole" data-sc-setting="mergeConnectionSource">
+                                <option value="inherit">Inherit Fast Summarizer</option>
+                                <option value="profile">Connection Profile</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="sc_easy_profile_settings" class="sc-sub-panel" style="display: none;">
+                        <div class="sc-setting-row">
+                            <label for="sc_easy_connection_profile">
+                                <span>Fast Summarizer Profile</span>
+                            </label>
+                            <select id="sc_easy_connection_profile" class="text_pole" data-sc-setting="connectionProfileId">
+                                <option value="">-- Select a Profile --</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="sc_easy_merge_profile_settings" class="sc-sub-panel" style="display: none;">
+                        <div class="sc-setting-row">
+                            <label for="sc_easy_merge_connection_profile">
+                                <span>Smart Deep Memory Profile</span>
+                            </label>
+                            <select id="sc_easy_merge_connection_profile" class="text_pole" data-sc-setting="mergeConnectionProfileId">
+                                <option value="">-- Select a Profile --</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-shield-halved"></span>
+                            Context Limits
+                        </h4>
+                    </div>
+                    <div class="sc-tuning-grid">
+                        <div class="sc-tuning-group">
+                            <div class="sc-row">
+                                <label for="sc_easy_summarizer_context">
+                                    <span>Summarizer Context</span>
+                                    <small class="sc-hint">The context window the summary model sees per call.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_easy_summarizer_context" min="8000" max="64000" step="1000" data-sc-slider-setting="advancedModelContext" data-sc-partner-input="#sc_easy_summarizer_context_val" />
+                                    <input id="sc_easy_summarizer_context_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="48k" data-sc-slider-setting="advancedModelContext" data-sc-partner-input="#sc_easy_summarizer_context" />
+                                </div>
+                            </div>
+                            <div class="sc-row">
+                                <label for="sc_easy_memory_token_budget">
+                                    <span>Injected Memory</span>
+                                    <small class="sc-hint">The most Summaryception memory added to your main chat prompt.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_easy_memory_token_budget" min="4000" max="32000" step="1000" data-sc-slider-setting="memoryTokenBudget" data-sc-partner-input="#sc_easy_memory_token_budget_val" />
+                                    <input id="sc_easy_memory_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="10k" data-sc-slider-setting="memoryTokenBudget" data-sc-partner-input="#sc_easy_memory_token_budget" />
+                                </div>
+                            </div>
+                            <div class="sc-row">
+                                <label for="sc_easy_verbatim_token_budget"><span>Recent Chat</span><small class="sc-hint">Recent raw chat kept live. The main request grows from Recent to Recent + Queued before Queued is summarized.</small></label>
+                                <div class="sc-slider-row"><input type="range" id="sc_easy_verbatim_token_budget" min="4000" max="64000" step="1000" data-sc-slider-setting="verbatimTokenBudget" data-sc-partner-input="#sc_easy_verbatim_token_budget_val" /><input id="sc_easy_verbatim_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" data-sc-slider-setting="verbatimTokenBudget" data-sc-partner-input="#sc_easy_verbatim_token_budget" /></div>
+                            </div>
+                            <div class="sc-row">
+                                <label for="sc_easy_queued_token_budget"><span>Queued Chat</span><small class="sc-hint">Older raw chat queued for summarization after Recent + Queued is full.</small></label>
+                                <div class="sc-slider-row"><input type="range" id="sc_easy_queued_token_budget" min="4000" max="64000" step="1000" data-sc-slider-setting="queuedTokenBudget" data-sc-partner-input="#sc_easy_queued_token_budget_val" /><input id="sc_easy_queued_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" data-sc-slider-setting="queuedTokenBudget" data-sc-partner-input="#sc_easy_queued_token_budget" /></div>
+                            </div>
+                        </div>
+                        <div class="sc-tuning-group">
+                            <div class="sc-tuning-title">
+                                <span class="fa-solid fa-clock-rotate-left"></span>
+                                <span>Memory Mode</span>
+                            </div>
+                            <div class="sc-radio-grid" role="radiogroup" aria-label="Easy Memory Mode">
+                                <label class="checkbox_label sc-toggle-row" for="sc_easy_memory_mode_balanced">
+                                    <span class="sc-toggle-icon fa-solid fa-layer-group"></span>
+                                    <span class="sc-toggle-copy">
+                                        <span class="sc-toggle-title">Default</span>
+                                        <small class="sc-hint">Keeps recent chat near the useful range and summarizes overflow as it arrives.</small>
+                                    </span>
+                                    <input type="radio" id="sc_easy_memory_mode_balanced" name="sc_easy_memory_mode" value="balanced" data-sc-setting="memoryMode" />
+                                </label>
+                                <label class="checkbox_label sc-toggle-row" for="sc_easy_memory_mode_prefix_cache">
+                                    <span class="sc-toggle-icon fa-solid fa-box-archive"></span>
+                                    <span class="sc-toggle-copy">
+                                        <span class="sc-toggle-title">Prefix Cache</span>
+                                        <small class="sc-hint">For normal caches that can reuse the unchanged start of a prompt even when the tail changes.</small>
+                                    </span>
+                                    <input type="radio" id="sc_easy_memory_mode_prefix_cache" name="sc_easy_memory_mode" value="prefix_cache" data-sc-setting="memoryMode" />
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-chart-pie"></span>
+                            Context Payload
+                        </h4>
+                    </div>
+                    <div class="sc-payload-rail" aria-label="Easy context payload order">
+                        <div class="sc-payload-part sc-payload-part-source">
+                            <span class="fa-solid fa-terminal"></span>
+                            <span>ST Context</span>
+                        </div>
+                        <span class="sc-payload-arrow fa-solid fa-arrow-right" aria-hidden="true"></span>
+                        <div class="sc-payload-part">
+                            <span class="fa-solid fa-layer-group"></span>
+                            <span>Memory</span>
+                            <strong id="sc_easy_payload_memory_budget">0</strong>
+                        </div>
+                        <span class="sc-payload-arrow fa-solid fa-arrow-right" aria-hidden="true"></span>
+                        <div class="sc-payload-part">
+                            <span class="fa-solid fa-message"></span>
+                            <span>A Recent</span>
+                            <strong id="sc_easy_payload_verbatim_budget">0</strong>
+                        </div>
+                        <span class="sc-payload-arrow fa-solid fa-arrow-right" aria-hidden="true"></span>
+                        <div class="sc-payload-part">
+                            <span>B Queue</span>
+                            <strong id="sc_easy_payload_queued_budget">0</strong>
+                        </div>
+                    <div class="sc-section-header sc-budget-subheader">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-layer-group"></span>
+                            Injected Memory
+                        </h4>
+                        <span id="sc_easy_memory_budget_total" class="sc-context-total">0 / 0</span>
+                    </div>
+                    <div id="sc_easy_memory_budget_bar" class="sc-context-bar" aria-label="Easy injected memory token usage"></div>
+                    <div id="sc_easy_memory_budget_legend" class="sc-context-legend"></div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-bolt"></span>
+                            Operations
+                        </h4>
+                    </div>
+                    <div class="sc-button-row sc-action-row">
+                        <button id="sc_easy_force_summarize" class="menu_button" title="Summarize backlog outside the verbatim window. Keeps recent chat live.">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>Force Summarize</span>
+                        </button>
+                        <button id="sc_easy_slop_breaker" class="menu_button" title="Summarize the live context too. Use when the AI is stuck repeating patterns.">
+                            <i class="fa-solid fa-broom"></i>
+                            <span>Slop Breaker</span>
+                        </button>
+                        <button id="sc_easy_stop_summarize" class="menu_button menu_button_danger">
+                            <i class="fa-solid fa-stop"></i>
+                            <span>Stop</span>
+                        </button>
+                        <button id="sc_easy_resume_summarize" class="menu_button" style="display: none;" title="Resume automatic summarization after Stop.">
+                            <i class="fa-solid fa-play"></i>
+                            <span>Resume</span>
+                        </button>
+                    </div>
+                </section>
+            </div>
+            <div id="sc_enabled_content">
+            <div class="sc-console-header" aria-label="Summaryception status">
+                <span id="sc_status_enabled" class="sc-console-value">Disabled</span>
+                <span class="sc-status-separator" aria-hidden="true">·</span>
+                <span id="sc_status_worker" class="sc-console-value">Idle</span>
+                <span class="sc-status-separator" aria-hidden="true">·</span>
+                <span class="sc-console-value"><strong id="sc_status_snippets">0</strong> snippets</span>
+                <span class="sc-status-separator" aria-hidden="true">·</span>
+                <span class="sc-console-value"><strong id="sc_status_ghosted">0</strong> ghosted</span>
+            </div>
+            <div class="sc-tab-list" role="tablist" aria-label="Summaryception settings">
+                <button class="sc-tab-button active" type="button" role="tab" aria-selected="true" data-sc-tab="status">
+                    <i class="fa-solid fa-gauge-high"></i>
+                    <span>Status</span>
+                </button>
+                <button class="sc-tab-button" type="button" role="tab" aria-selected="false" data-sc-tab="memory">
+                    <i class="fa-solid fa-chart-simple"></i>
+                    <span>Memory</span>
+                </button>
+                <button class="sc-tab-button" type="button" role="tab" aria-selected="false" data-sc-tab="models">
+                    <i class="fa-solid fa-plug"></i>
+                    <span>Models</span>
+                </button>
+                <button class="sc-tab-button" type="button" role="tab" aria-selected="false" data-sc-tab="settings">
+                    <i class="fa-solid fa-sliders"></i>
+                    <span>Settings</span>
+                </button>
+                <button class="sc-tab-button" type="button" role="tab" aria-selected="false" data-sc-tab="prompts">
+                    <i class="fa-solid fa-pen-to-square"></i>
+                    <span>Prompts</span>
+                </button>
+                <button class="sc-tab-button" type="button" role="tab" aria-selected="false" data-sc-tab="diagnostics">
+                    <i class="fa-solid fa-screwdriver-wrench"></i>
+                    <span>Tools</span>
+                </button>
+            </div>
+            <div class="sc-tab-panel active" role="tabpanel" data-sc-panel="status">
+                <section class="sc-section">
+                    <div class="sc-section-header sc-budget-subheader">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-message"></span>
+                            Verbatim Window
+                        </h4>
+                        <span id="sc_verbatim_budget_total" class="sc-context-total">0 / 0</span>
+                    </div>
+                    <div id="sc_verbatim_budget_bar" class="sc-context-bar" aria-label="Verbatim window token usage"></div>
+                    <div id="sc_verbatim_budget_legend" class="sc-context-legend"></div>
+                    <div class="sc-section-header sc-budget-subheader">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-gauge-high"></span>
+                            Queued &rarr; Trigger
+                        </h4>
+                        <span id="sc_trigger_budget_total" class="sc-context-total">0 / 0</span>
+                    </div>
+                    <div id="sc_trigger_budget_bar" class="sc-context-bar" aria-label="Queued tokens toward summarization trigger"></div>
+                    <div id="sc_trigger_budget_legend" class="sc-context-legend"></div>
+                    <div class="sc-section-header sc-budget-subheader">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-layer-group"></span>
+                            Memory Block
+                        </h4>
+                        <span id="sc_memory_budget_total" class="sc-context-total">0 / 0</span>
+                    </div>
+                    <div id="sc_memory_budget_bar" class="sc-context-bar" aria-label="Memory block token usage"></div>
+                    <div id="sc_memory_budget_legend" class="sc-context-legend"></div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-bolt"></span>
+                            Operations
+                        </h4>
+                    </div>
+                    <div class="sc-button-row sc-action-row">
+                        <button id="sc_force_summarize" class="menu_button" title="Summarize backlog outside the verbatim window. Keeps recent chat live." aria-label="Force Summarize: summarize backlog outside the verbatim window. Keeps recent chat live.">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>Force Summarize</span>
+                        </button>
+                        <button id="sc_slop_breaker" class="menu_button" title="Summarize the live context too. Use when the AI is stuck repeating patterns." aria-label="Slop Breaker: summarize the live context too. Use when the AI is stuck repeating patterns.">
+                            <i class="fa-solid fa-broom"></i>
+                            <span>Slop Breaker</span>
+                        </button>
+                        <button id="sc_stop_summarize" class="menu_button menu_button_danger">
+                            <i class="fa-solid fa-stop"></i>
+                            <span>Stop</span>
+                        </button>
+                        <button id="sc_resume_summarize" class="menu_button" style="display: none;" title="Resume automatic summarization after Stop.">
+                            <i class="fa-solid fa-play"></i>
+                            <span>Resume</span>
+                        </button>
+                    </div>
+                    <div id="sc_manual_cache_warning" class="sc-note" style="display: none;">
+                        <span class="fa-solid fa-circle-info"></span>
+                        <small>Manual summarization updates memory immediately and may reset cache savings for the next request.</small>
+                    </div>
+                </section>
+            </div>
+            <div class="sc-tab-panel" role="tabpanel" data-sc-panel="memory">
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-chart-simple"></span>
+                            Memory
+                        </h4>
+                    </div>
+                    <div class="sc-memory-grid">
+                        <div id="sc_layer_stats" class="sc-stats-box"></div>
+                        <div>
+                            <div class="sc-field-header">
+                                <label for="sc_preview">Injection Preview</label>
+                                <div class="sc-field-actions">
+                                    <span id="sc_preview_token_count" class="sc-context-total">0 tokens</span>
+                                    <button id="sc_refresh_preview" class="menu_button sc-icon-button" title="Refresh preview">
+                                        <i class="fa-solid fa-rotate"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <textarea id="sc_preview" class="text_pole sc-textarea sc-preview" rows="6" readonly></textarea>
+                        </div>
+                    </div>
+                    <div class="sc-button-row sc-memory-actions">
+                        <button id="sc_import" class="menu_button">
+                           <i class="fa-solid fa-download"></i>
+                           <span>Import</span>
+                        </button>
+                        <button id="sc_export" class="menu_button">
+                            <i class="fa-solid fa-upload"></i>
+                            <span>Export</span>
+                        </button>
+                    </div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-layer-group"></span>
+                            Snippets
+                        </h4>
+                    </div>
+                    <div id="sc_snippet_browser" class="sc-snippet-browser"></div>
+                </section>
+            </div>
+            <div class="sc-tab-panel" role="tabpanel" data-sc-panel="models">
+                <details id="summaryception_connection_settings" class="sc-connection-group">
+                    <summary>
+                        <span class="fa-solid fa-plug"></span>
+                        <span>Narrative Connections</span>
+                    </summary>
+                    <div class="sc-connection-card">
+                        <div class="sc-section-header">
+                            <h4 class="sc-section-title">
+                                <span class="fa-solid fa-plug"></span>
+                                Layer 0 Summarizer Connection
+                            </h4>
+                        </div>
+                        <small class="sc-help-text">Used for raw chat to Layer 0 summaries and Layer 0 regeneration.</small>
+                        <div class="sc-settings-grid sc-connection-grid">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_connection_source">
+                                    <span>Layer 0 Source</span>
+                                </label>
+                                <select id="summaryception_connection_source" class="text_pole" data-sc-setting="connectionSource">
+                                    <option value="default">Default (Main API)</option>
+                                    <option value="profile">Connection Profile</option>
+                                </select>
+                            </div>
+                            <div class="sc-setting-row">
+                                <label for="sc_summarizer_response_length">
+                                    <span>Layer 0 Response Length</span>
+                                    <small>0 uses the selected provider default. Use a positive value only when you need an explicit cap.</small>
+                                </label>
+                                <input id="sc_summarizer_response_length" type="number" class="text_pole" min="0" step="100" value="0" placeholder="0 = provider default" data-sc-setting="summarizerResponseLength" data-sc-type="number" data-sc-fallback="0" />
+                            </div>
+                            <div class="sc-setting-row">
+                                <label for="sc_request_timeout">
+                                    <span>Request Timeout</span>
+                                    <small>Per-attempt timeout for Layer 0 summary and regeneration calls. Raise this for slow local models.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_request_timeout" min="60" max="7200" step="10" data-sc-slider-setting="requestTimeoutSeconds" data-sc-partner-input="#sc_request_timeout_val" />
+                                    <input id="sc_request_timeout_val" class="text_pole sc-val" type="text" inputmode="numeric" value="120" data-sc-slider-setting="requestTimeoutSeconds" data-sc-partner-input="#sc_request_timeout" />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="summaryception_profile_settings" class="sc-sub-panel" style="display: none;">
+                            <div class="sc-setting-row">
                                 <label for="summaryception_connection_profile">
                                     <span>Connection Profile</span>
                                 </label>
-                                <select id="summaryception_connection_profile" class="text_pole">
+                                <select id="summaryception_connection_profile" class="text_pole" data-sc-setting="connectionProfileId">
                                     <option value="">-- Select a Profile --</option>
                                 </select>
                             </div>
-                            <div class="summaryception-note">
-                                <span class="fa-solid fa-info-circle"></span>
-                                <small>
-                                    Uses a saved SillyTavern Connection Profile. Includes endpoint, API key, model, and presets.
-                                    Requires ST 1.12.4+. For full API key support, use staging (March 2026+).
-                                    ⚠️ Connection Profiles inject preset formatting into summary requests, which may degrade summary quality.
-                                    ⚠️ Consider using Default or OpenAI Compatible instead.
-                                </small>
+                            <div class="sc-note">
+                                <span class="fa-solid fa-circle-info"></span>
+                                <small>Uses a saved SillyTavern Connection Profile. Profile formatting can affect summary quality.</small>
                             </div>
                         </div>
-
-                        <!-- ── Ollama Sub-panel ── -->
-                        <div id="summaryception_ollama_settings" class="summaryception-sub-panel" style="display: none;">
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_ollama_url">
-                                    <span>Ollama URL</span>
+                    </div>
+                    <div class="sc-connection-card">
+                        <div class="sc-section-header">
+                            <h4 class="sc-section-title">
+                                <span class="fa-solid fa-code-merge"></span>
+                                Layer 1+ Merge Connection
+                            </h4>
+                        </div>
+                        <small class="sc-help-text">Optional smarter connection for promotion merges. Inherit keeps existing behavior.</small>
+                        <div class="sc-settings-grid sc-connection-grid">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_merge_connection_source">
+                                    <span>Merge Source</span>
                                 </label>
-                                <input id="summaryception_ollama_url" type="text" class="text_pole"
-                                       placeholder="http://localhost:11434" />
+                                <select id="summaryception_merge_connection_source" class="text_pole" data-sc-setting="mergeConnectionSource">
+                                    <option value="inherit">Inherit Layer 0</option>
+                                    <option value="default">Default (Main API)</option>
+                                    <option value="profile">Connection Profile</option>
+                                </select>
                             </div>
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_ollama_model">
-                                    <span>Model</span>
+                            <div id="summaryception_merge_response_length_row" class="sc-setting-row" style="display: none;">
+                                <label for="sc_merge_summarizer_response_length">
+                                    <span>Merge Response Length</span>
+                                    <small>0 uses the selected provider default. Used by Default/Profile sources.</small>
                                 </label>
-                                <div class="summaryception-input-group">
-                                    <select id="summaryception_ollama_model" class="text_pole">
-                                        <option value="">-- Select Model --</option>
-                                    </select>
-                                    <div id="summaryception_ollama_refresh"
-                                         class="menu_button menu_button_icon"
-                                         title="Refresh model list from Ollama">
-                                        <span class="fa-solid fa-arrows-rotate"></span>
+                                <input id="sc_merge_summarizer_response_length" type="number" class="text_pole" min="0" step="100" value="0" placeholder="0 = use provider default" data-sc-setting="mergeSummarizerResponseLength" data-sc-type="number" data-sc-fallback="0" />
+                            </div>
+                            <div class="sc-setting-row">
+                                <label for="sc_merge_request_timeout">
+                                    <span>Merge Request Timeout</span>
+                                    <small>Per-attempt timeout for Layer 1+ promotion merge calls. Lower than Layer 0 by default.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_merge_request_timeout" min="60" max="7200" step="10" data-sc-slider-setting="mergeRequestTimeoutSeconds" data-sc-partner-input="#sc_merge_request_timeout_val" />
+                                    <input id="sc_merge_request_timeout_val" class="text_pole sc-val" type="text" inputmode="numeric" value="90" data-sc-slider-setting="mergeRequestTimeoutSeconds" data-sc-partner-input="#sc_merge_request_timeout" />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="summaryception_merge_profile_settings" class="sc-sub-panel" style="display: none;">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_merge_connection_profile">
+                                    <span>Merge Connection Profile</span>
+                                </label>
+                                <select id="summaryception_merge_connection_profile" class="text_pole" data-sc-setting="mergeConnectionProfileId">
+                                    <option value="">-- Select a Profile --</option>
+                                </select>
+                            </div>
+                            <div class="sc-note">
+                                <span class="fa-solid fa-circle-info"></span>
+                                <small>Uses a saved SillyTavern Connection Profile only for Layer 1+ merge calls.</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sc-connection-card">
+                        <div class="sc-section-header">
+                            <h4 class="sc-section-title">
+                                <span class="fa-solid fa-shield-halved"></span>
+                                Fallback Connection
+                            </h4>
+                        </div>
+                        <small class="sc-help-text">Optional failover after the primary route exhausts retryable errors.</small>
+                        <div class="sc-settings-grid sc-connection-grid">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_fallback_connection_source">
+                                    <span>Fallback Source</span>
+                                </label>
+                                <select id="summaryception_fallback_connection_source" class="text_pole" data-sc-setting="fallbackConnectionSource">
+                                    <option value="disabled">Disabled</option>
+                                    <option value="default">Default (Main API)</option>
+                                    <option value="profile">Connection Profile</option>
+                                </select>
+                            </div>
+                            <div id="summaryception_fallback_response_length_row" class="sc-setting-row" style="display: none;">
+                                <label for="sc_fallback_summarizer_response_length">
+                                    <span>Fallback Response Length</span>
+                                    <small>0 uses the selected provider default. Used by Default/Profile sources.</small>
+                                </label>
+                                <input id="sc_fallback_summarizer_response_length" type="number" class="text_pole" min="0" step="100" value="0" placeholder="0 = use provider default" data-sc-setting="fallbackSummarizerResponseLength" data-sc-type="number" data-sc-fallback="0" />
+                            </div>
+                            <div class="sc-setting-row">
+                                <label for="sc_fallback_request_timeout">
+                                    <span>Fallback Request Timeout</span>
+                                    <small>Per-attempt timeout for the fallback route after the primary route fails.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_fallback_request_timeout" min="60" max="7200" step="10" data-sc-slider-setting="fallbackRequestTimeoutSeconds" data-sc-partner-input="#sc_fallback_request_timeout_val" />
+                                    <input id="sc_fallback_request_timeout_val" class="text_pole sc-val" type="text" inputmode="numeric" value="120" data-sc-slider-setting="fallbackRequestTimeoutSeconds" data-sc-partner-input="#sc_fallback_request_timeout" />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="summaryception_fallback_profile_settings" class="sc-sub-panel" style="display: none;">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_fallback_connection_profile">
+                                    <span>Fallback Connection Profile</span>
+                                </label>
+                                <select id="summaryception_fallback_connection_profile" class="text_pole" data-sc-setting="fallbackConnectionProfileId">
+                                    <option value="">-- Select a Profile --</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                <details class="sc-connection-group">
+                    <summary>
+                        <span class="fa-solid fa-user-shield"></span>
+                        <span>Continuity Connections</span>
+                    </summary>
+                    <div class="sc-connection-card">
+                        <div class="sc-section-header">
+                            <h4 class="sc-section-title">
+                                <span class="fa-solid fa-user-shield"></span>
+                                Continuity Auditor Connection
+                            </h4>
+                        </div>
+                        <small class="sc-help-text">Optional dedicated route for Continuity Auditor audit calls. Inherit keeps existing behavior.</small>
+                        <div class="sc-settings-grid sc-connection-grid">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_auditor_connection_source">
+                                    <span>Auditor Source</span>
+                                </label>
+                                <select id="summaryception_auditor_connection_source" class="text_pole" data-sc-setting="auditorConnectionSource">
+                                    <option value="inherit">Inherit Layer 0</option>
+                                    <option value="default">Default (Main API)</option>
+                                    <option value="profile">Connection Profile</option>
+                                </select>
+                            </div>
+                            <div id="summaryception_auditor_response_length_row" class="sc-setting-row" style="display: none;">
+                                <label for="sc_auditor_summarizer_response_length">
+                                    <span>Auditor Response Length</span>
+                                    <small>0 uses the selected provider default. Used by Default/Profile sources.</small>
+                                </label>
+                                <input id="sc_auditor_summarizer_response_length" type="number" class="text_pole" min="0" step="100" value="0" placeholder="0 = use provider default" data-sc-setting="auditorSummarizerResponseLength" data-sc-type="number" data-sc-fallback="0" />
+                            </div>
+                            <div id="summaryception_auditor_timeout_row" class="sc-setting-row" style="display: none;">
+                                <label for="sc_auditor_request_timeout">
+                                    <span>Auditor Request Timeout</span>
+                                    <small>Per-attempt timeout for Continuity Auditor audit calls.</small>
+                                </label>
+                                <div class="sc-slider-row">
+                                    <input type="range" id="sc_auditor_request_timeout" min="60" max="7200" step="10" data-sc-slider-setting="auditorRequestTimeoutSeconds" data-sc-partner-input="#sc_auditor_request_timeout_val" />
+                                    <input id="sc_auditor_request_timeout_val" class="text_pole sc-val" type="text" inputmode="numeric" value="120" data-sc-slider-setting="auditorRequestTimeoutSeconds" data-sc-partner-input="#sc_auditor_request_timeout" />
+                                </div>
+                            </div>
+                        </div>
+                        <div id="summaryception_auditor_profile_settings" class="sc-sub-panel" style="display: none;">
+                            <div class="sc-setting-row">
+                                <label for="summaryception_auditor_connection_profile">
+                                    <span>Auditor Connection Profile</span>
+                                </label>
+                                <select id="summaryception_auditor_connection_profile" class="text_pole" data-sc-setting="auditorConnectionProfileId">
+                                    <option value="">-- Select a Profile --</option>
+                                </select>
+                            </div>
+                            <div class="sc-note">
+                                <span class="fa-solid fa-circle-info"></span>
+                                <small>Uses a saved SillyTavern Connection Profile only for Continuity Auditor calls.</small>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+            <div class="sc-tab-panel" role="tabpanel" data-sc-panel="settings">
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-clock-rotate-left"></span>
+                            Memory Mode
+                        </h4>
+                    </div>
+                    <div class="sc-row sc-memory-mode-row">
+                        <div class="sc-mode-grid" role="radiogroup" aria-label="Memory Mode">
+                            <label class="checkbox_label sc-mode-card" for="sc_memory_mode_balanced">
+                                <span class="sc-toggle-icon fa-solid fa-layer-group"></span>
+                                <span class="sc-toggle-copy">
+                                    <span class="sc-toggle-title">Default</span>
+                                    <small class="sc-hint">Keeps recent chat near the useful range and summarizes overflow as it arrives.</small>
+                                </span>
+                                <input type="radio" id="sc_memory_mode_balanced" name="sc_memory_mode" value="balanced" data-sc-setting="memoryMode" />
+                            </label>
+                            <label class="checkbox_label sc-mode-card" for="sc_memory_mode_prefix_cache">
+                                <span class="sc-toggle-icon fa-solid fa-box-archive"></span>
+                                <span class="sc-toggle-copy">
+                                    <span class="sc-toggle-title">Prefix Cache</span>
+                                <small class="sc-hint">For normal caches that can reuse the unchanged start of a prompt even when the tail changes.</small>
+                                </span>
+                                <input type="radio" id="sc_memory_mode_prefix_cache" name="sc_memory_mode" value="prefix_cache" data-sc-setting="memoryMode" />
+                            </label>
+                        </div>
+                    </div>
+                    <div id="sc_memory_help_balanced" class="sc-note">
+                        <span class="fa-solid fa-circle-info"></span>
+                        <small>Default keeps raw chat near the 22k live window and summarizes overflow as it arrives. Use it to keep context in a useful range when prompt caching is unavailable, weak, or not worth planning around.</small>
+                    </div>
+                    <div id="sc_memory_help_prefix_cache" class="sc-note" style="display: none;">
+                        <span class="fa-solid fa-circle-info"></span>
+                        <small>Prefix Cache lets live chat grow to 32k. Most providers can reuse the longest unchanged prefix, so a changed tail still reuses the shared start. Normal lorebooks work as usual. Context is larger, and a summary flush starts a new cache prefix.</small>
+                    </div>
+                </section>
+                <section id="sc_continuity_section" class="sc-section" style="display: none;">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-user-shield"></span>
+                            Continuity Auditor
+                        </h4>
+                    </div>
+                    <small class="sc-help-text">Connection settings: Models → Continuity Connections.</small>
+                    <div class="sc-toggle-list">
+                        <label class="checkbox_label sc-toggle-row" for="sc_continuity_enabled">
+                            <span class="sc-toggle-icon fa-solid fa-user-shield"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Enable Continuity Auditor</span>
+                                <small class="sc-hint">Audits each finished solo-chat reply in the background and maintains the active continuity state (bonds, agendas, notes, physics). Off by default.</small>
+                            </span>
+                            <input type="checkbox" id="sc_continuity_enabled" data-sc-setting="continuityEnabled" />
+                        </label>
+                    </div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-code"></span>
+                            Input Processing
+                        </h4>
+                    </div>
+                    <div class="sc-toggle-list">
+                        <label class="checkbox_label sc-toggle-row" for="sc_apply_regex_scripts">
+                            <span class="sc-toggle-icon fa-solid fa-code"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Apply Regex Scripts</span>
+                                <small class="sc-hint">Apply regexes against the text the RP model actually sees.</small>
+                            </span>
+                            <input type="checkbox" id="sc_apply_regex_scripts" data-sc-setting="applyRegexScripts" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_hide_non_text_messages">
+                            <span class="sc-toggle-icon fa-solid fa-image"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Hide Non-Text Messages</span>
+                                <small class="sc-hint">Also hides images, tool calls and other text-less messages inside the summarized range, so they stop costing context. On by default; turn off to keep text-less messages visible to the model.</small>
+                            </span>
+                            <input type="checkbox" id="sc_hide_non_text_messages" data-sc-setting="hideNonTextMessages" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_strip_chinese_ideographs">
+                            <span class="sc-toggle-icon fa-solid fa-language"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Strip CN</span>
+                                <small class="sc-hint">Strips Han ideographs from the summarizer's replies.</small>
+                            </span>
+                            <input type="checkbox" id="sc_strip_chinese_ideographs" data-sc-setting="stripChineseIdeographs" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_mask_user_role_as_assistant">
+                            <span class="sc-toggle-icon fa-solid fa-user-secret"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Mask User Role</span>
+                                <small class="sc-hint">Send your turns as the AI's own words so the model stops treating your character like someone it has to protect.</small>
+                            </span>
+                            <input type="checkbox" id="sc_mask_user_role_as_assistant" data-sc-setting="maskUserRoleAsAssistant" />
+                        </label>
+                        <div id="sc_mask_user_role_mode_row" class="sc-sub-panel" style="display: none;">
+                            <div class="sc-setting-row">
+                                <label for="sc_mask_user_role_mode">
+                                    <span>Compatibility mode</span>
+                                    <small class="sc-hint">Some providers reject a request with no user message, so the marker modes add one throwaway user line.</small>
+                                <select id="sc_mask_user_role_mode" class="text_pole" disabled data-sc-setting="maskUserRoleMode">
+                                    <option value="marker_first">Marker first (for APIs that need a user message)</option>
+                                    <option value="rewrite_all">No marker: every turn becomes the AI</option>
+                                    <option value="marker_last">Marker last (for APIs that need a user message)</option>
+                                    <option value="keep_last_user">Keep my final message as user</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-microchip"></span>
+                            LLM Call Context
+                        </h4>
+                    </div>
+                    <div class="sc-llm-context-grid">
+                        <div class="sc-llm-context-row sc-llm-context-row-wide">
+                            <span class="sc-llm-context-label">Main Chat Call</span>
+                            <span class="sc-llm-context-value" id="sc_llm_context_main">~26k + ST prompt</span>
+                        </div>
+                        <div class="sc-llm-context-row">
+                            <span class="sc-llm-context-label">L0 Call</span>
+                            <span class="sc-llm-context-value" id="sc_llm_context_l0">~10k tokens</span>
+                        </div>
+                        <div class="sc-llm-context-row">
+                            <span class="sc-llm-context-label">L1+ Merge Call</span>
+                            <span class="sc-llm-context-value" id="sc_llm_context_l1">~1k tokens</span>
+                        </div>
+                    </div>
+                    <small class="sc-hint">Main call: memory plus live chat plus the ST prompt. L0 call: a raw chat batch plus the memory block plus prompt overhead. L1+ merge: stored summaries from deeper layers plus prompt overhead.</small>
+                </section>
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-sliders"></span>
+                            Engine Tuning
+                        </h4>
+                    </div>
+                    <div class="sc-tuning-grid">
+                        <div class="sc-tuning-column">
+                            <div class="sc-tuning-group">
+                                <div class="sc-tuning-title">
+                                    <span class="fa-solid fa-microchip"></span>
+                                    <span>Model Context</span>
+                                </div>
+                                <div class="sc-row">
+                                    <label for="sc_advanced_model_context">
+                                        <span>Model context</span>
+                                        <small class="sc-hint">How much context your summarizer model can take. This auto-tunes the batch sizes below; override any of them in Expert Tuning.</small>
+                                    </label>
+                                    <div class="sc-slider-row">
+                                        <input type="range" id="sc_advanced_model_context" min="8000" max="64000" step="1000" data-sc-slider-setting="advancedModelContext" data-sc-partner-input="#sc_advanced_model_context_val" />
+                                        <input id="sc_advanced_model_context_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="48k" data-sc-slider-setting="advancedModelContext" data-sc-partner-input="#sc_advanced_model_context" />
                                     </div>
                                 </div>
                             </div>
-                            <div class="summaryception-note">
-                                <span class="fa-solid fa-info-circle"></span>
-                                <small>
-                                    Connects to a local Ollama instance. Requires <code>enableCorsProxy: true</code> in
-                                    your SillyTavern <code>config.yaml</code>, OR set the <code>OLLAMA_ORIGINS=*</code>
-                                    environment variable on your Ollama instance.
-                                </small>
-                            </div>
                         </div>
-
-                        <!-- ── OpenAI Compatible Sub-panel ── -->
-                        <div id="summaryception_openai_settings" class="summaryception-sub-panel" style="display: none;">
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_openai_url">
-                                    <span>Endpoint URL</span>
-                                </label>
-                                <input id="summaryception_openai_url" type="text" class="text_pole"
-                                       placeholder="http://localhost:1234/v1 or https://openrouter.ai/api/v1" />
-                            </div>
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_openai_key">
-                                    <span>API Key</span>
-                                </label>
-                                <input id="summaryception_openai_key" type="password" class="text_pole"
-                                       placeholder="(optional, for cloud services)" autocomplete="off" />
-                            </div>
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_openai_model">
-                                    <span>Model Name</span>
-                                </label>
-                                <input id="summaryception_openai_model" type="text" class="text_pole"
-                                       placeholder="e.g. gpt-4o-mini, llama-3.1-8b" />
-                            </div>
-                            <div class="summaryception-setting-row">
-                                <label for="summaryception_openai_max_tokens">
-                                    <span>Max Tokens</span>
-                                </label>
-                                <input id="summaryception_openai_max_tokens" type="number" class="text_pole"
-                                       min="0" step="100" placeholder="0 = no limit (provider default)" />
-                            </div>
-                            <div class="summaryception-setting-row">
-                                <div id="summaryception_openai_test"
-                                     class="menu_button menu_button_icon"
-                                     title="Test the OpenAI-compatible connection">
-                                    <span class="fa-solid fa-plug-circle-check"></span>
-                                    <span>Test Connection</span>
+                        <div class="sc-tuning-column">
+                            <div class="sc-tuning-group">
+                                <div class="sc-tuning-title">
+                                    <span class="fa-solid fa-layer-group"></span>
+                                    <span>Memory Structure</span>
+                                </div>
+                                <div class="sc-row">
+                                    <label for="sc_verbatim_token_budget">
+                                        <span>Recent Chat</span>
+                                        <small class="sc-hint">Recent raw chat kept live after older chat enters the queued window.</small>
+                                    </label>
+                                    <div class="sc-slider-row">
+                                        <input type="range" id="sc_verbatim_token_budget" min="4000" max="64000" step="1000" data-sc-slider-setting="verbatimTokenBudget" data-sc-partner-input="#sc_verbatim_token_budget_val" />
+                                        <input id="sc_verbatim_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="22k" data-sc-slider-setting="verbatimTokenBudget" data-sc-partner-input="#sc_verbatim_token_budget" />
+                                    </div>
+                                </div>
+                                <div class="sc-row">
+                                    <label for="sc_queued_token_budget">
+                                        <span>Queued Chat</span>
+                                        <small class="sc-hint">Older raw chat queued for summarization. Automatic summarization starts when Recent + Queued is full.</small>
+                                    </label>
+                                    <div class="sc-slider-row">
+                                        <input type="range" id="sc_queued_token_budget" min="4000" max="64000" step="1000" data-sc-slider-setting="queuedTokenBudget" data-sc-partner-input="#sc_queued_token_budget_val" />
+                                        <input id="sc_queued_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="6k" data-sc-slider-setting="queuedTokenBudget" data-sc-partner-input="#sc_queued_token_budget" />
+                                    </div>
+                                </div>
+                                <div class="sc-row">
+                                    <label for="sc_memory_token_budget">
+                                        <span>Memory Size Limit</span>
+                                        <small class="sc-hint">Total size of all summaries sent as Summaryception memory. Bigger means more of the back-story you actually remember.</small>
+                                    </label>
+                                    <div class="sc-slider-row">
+                                        <input type="range" id="sc_memory_token_budget" min="4000" max="32000" step="1000" data-sc-slider-setting="memoryTokenBudget" data-sc-partner-input="#sc_memory_token_budget_val" />
+                                        <input id="sc_memory_token_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="10k" data-sc-slider-setting="memoryTokenBudget" data-sc-partner-input="#sc_memory_token_budget" />
+                                    </div>
                                 </div>
                             </div>
-                            <div class="summaryception-note">
-                                <span class="fa-solid fa-info-circle"></span>
-                                <small>
-                                    Works with LM Studio, KoboldCPP, vLLM, text-generation-webui, OpenRouter, or any
-                                    OpenAI-compatible endpoint. Enter the base URL up to <code>/v1</code>
-                                    (e.g. <code>http://localhost:1234/v1</code>).
-                                    Local endpoints require <code>enableCorsProxy: true</code> in <code>config.yaml</code>.
-                                    Cloud APIs (OpenRouter, etc.) work without the proxy.
-                                </small>
+                        </div>
+                    </div>
+                    <details class="sc-expert-tuning">
+                        <summary>
+                            <span class="fa-solid fa-screwdriver-wrench"></span>
+                            <span>Expert Tuning</span>
+                        </summary>
+                        <div class="sc-tuning-grid">
+                            <div class="sc-tuning-column">
+                                <div class="sc-tuning-group">
+                                    <div class="sc-tuning-title">
+                                        <span class="fa-solid fa-microchip"></span>
+                                        <span>Summarizer Engine</span>
+                                    </div>
+                                    <small class="sc-hint">These auto-set from Model context. Override any of them here.</small>
+                                    <div class="sc-row">
+                                        <label for="sc_max_l0_source_tokens">
+                                            <span>Max Source per Call</span>
+                                            <small class="sc-hint">Hard cap on raw chat sent to the LLM in one call. Lower it if your model has a small context window.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_max_l0_source_tokens" min="8000" max="64000" step="1000" data-sc-slider-setting="maxL0SourceTokens" data-sc-partner-input="#sc_max_l0_source_tokens_val" />
+                                            <input id="sc_max_l0_source_tokens_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="24k" data-sc-slider-setting="maxL0SourceTokens" data-sc-partner-input="#sc_max_l0_source_tokens" />
+                                        </div>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_min_summary_budget">
+                                            <span>Target Source per Call</span>
+                                            <small id="sc_min_summary_budget_hint" class="sc-hint">Preferred raw-chat size for each balanced Layer 0 partition.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_min_summary_budget" min="4000" max="32000" step="1000" data-sc-slider-setting="minSummaryBudget" data-sc-partner-input="#sc_min_summary_budget_val" />
+                                            <input id="sc_min_summary_budget_val" class="text_pole sc-val sc-val-wide" type="text" inputmode="numeric" value="16k" data-sc-slider-setting="minSummaryBudget" data-sc-partner-input="#sc_min_summary_budget" />
+                                        </div>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_layer0_summary_token_target">
+                                            <span>Narrative Target Size</span>
+                                            <small class="sc-hint">Target length for each new <code>&lt;narrative&gt;</code> envelope.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_layer0_summary_token_target" min="80" max="700" step="10" data-sc-slider-setting="layer0SummaryTokenTarget" data-sc-partner-input="#sc_layer0_summary_token_target_val" />
+                                            <input id="sc_layer0_summary_token_target_val" class="text_pole sc-val" type="text" inputmode="numeric" value="280" data-sc-slider-setting="layer0SummaryTokenTarget" data-sc-partner-input="#sc_layer0_summary_token_target" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sc-tuning-column">
+                                <div class="sc-tuning-group">
+                                    <div class="sc-tuning-title">
+                                        <span class="fa-solid fa-timeline"></span>
+                                        <span>Batch Readiness</span>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_min_summary_turns">
+                                            <span>Min Turns per Batch</span>
+                                            <small class="sc-hint">Minimum assistant replies before a batch can compress, so it won't summarize too eagerly.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_min_summary_turns" min="2" max="10" step="1" data-sc-slider-setting="minSummaryTurns" data-sc-partner-input="#sc_min_summary_turns_val" />
+                                            <input id="sc_min_summary_turns_val" class="text_pole sc-val" type="text" inputmode="numeric" value="3" data-sc-slider-setting="minSummaryTurns" data-sc-partner-input="#sc_min_summary_turns" />
+                                        </div>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_max_summary_turns">
+                                            <span>Max Turns per Batch</span>
+                                            <small class="sc-hint">Most assistant replies packed into one batch, so batches don't grow too large.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_max_summary_turns" min="3" max="20" step="1" data-sc-slider-setting="maxSummaryTurns" data-sc-partner-input="#sc_max_summary_turns_val" />
+                                            <input id="sc_max_summary_turns_val" class="text_pole sc-val" type="text" inputmode="numeric" value="8" data-sc-slider-setting="maxSummaryTurns" data-sc-partner-input="#sc_max_summary_turns" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="sc-tuning-group">
+                                    <div class="sc-tuning-title">
+                                        <span class="fa-solid fa-clock-rotate-left"></span>
+                                        <span>Provider Cache</span>
+                                    </div>
+                                    <div class="sc-row sc-cache-mode-row" style="display: none;">
+                                        <label for="sc_cache_ttl">
+                                            <span>Cache TTL</span>
+                                            <small class="sc-hint">Minutes your provider keeps a cached prompt prefix. Prefix Cache only: when the last turn is older than this, the cache is treated as expired and chat load suggests an early Force Summarize.</small>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_cache_ttl" min="5" max="240" step="5" data-sc-slider-setting="cacheTtlMinutes" data-sc-partner-input="#sc_cache_ttl_val" />
+                                            <input id="sc_cache_ttl_val" class="text_pole sc-val" type="text" inputmode="numeric" value="30" data-sc-slider-setting="cacheTtlMinutes" data-sc-partner-input="#sc_cache_ttl" />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="sc-tuning-group">
+                                    <div class="sc-tuning-title">
+                                        <span class="fa-solid fa-code-merge"></span>
+                                        <span>Layer Promotion</span>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_snippets_per_layer">
+                                            <span>Max Memories per Layer</span>
+                                            <small class="sc-hint">How many summaries each layer keeps before the oldest ones merge into deeper memory.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_snippets_per_layer" min="20" max="40" step="1" data-sc-slider-setting="snippetsPerLayer" data-sc-partner-input="#sc_snippets_per_layer_val" />
+                                            <input id="sc_snippets_per_layer_val" class="text_pole sc-val" type="text" inputmode="numeric" value="24" data-sc-slider-setting="snippetsPerLayer" data-sc-partner-input="#sc_snippets_per_layer" />
+                                        </div>
+                                    </div>
+                                    <div class="sc-row">
+                                        <label for="sc_snippets_per_promotion">
+                                            <span>Memories per Merge</span>
+                                            <small class="sc-hint">How many summaries merge together in one pass when rolling up into deeper layers.</small>
+                                        </label>
+                                        <div class="sc-slider-row">
+                                            <input type="range" id="sc_snippets_per_promotion" min="3" max="4" step="1" data-sc-slider-setting="snippetsPerPromotion" data-sc-partner-input="#sc_snippets_per_promotion_val" />
+                                            <input id="sc_snippets_per_promotion_val" class="text_pole sc-val" type="text" inputmode="numeric" value="3" data-sc-slider-setting="snippetsPerPromotion" data-sc-partner-input="#sc_snippets_per_promotion" />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
-
-                        <!-- Connection Status Indicator -->
-                        <div id="summaryception_connection_status" class="summaryception-connection-status" style="display: none;">
-                            <span id="summaryception_connection_status_icon" class="fa-solid fa-circle"></span>
-                            <span id="summaryception_connection_status_text"></span>
+                    </details>
+                    <div class="sc-placement-panel">
+                        <div class="sc-section-header">
+                            <h4 class="sc-section-title">
+                                <span class="fa-solid fa-location-dot"></span>
+                                Memory Position
+                            </h4>
+                        </div>
+                        <div id="sc_custom_memory_controls" class="sc-sub-panel sc-settings-grid">
+                            <div class="sc-setting-row">
+                                <label for="sc_custom_memory_position">
+                                    <span>Memory Position</span>
+                                    <small class="sc-hint">Where Summaryception memory sits in the ST prompt.</small>
+                                </label>
+                                <select id="sc_custom_memory_position" class="text_pole" data-sc-setting="customMemoryPosition">
+                                    <option value="before_prompt">Before Prompt</option>
+                                    <option value="in_prompt">In Prompt</option>
+                                    <option value="in_chat">In Chat</option>
+                                    <option value="macro_only">Macro Only</option>
+                                </select>
+                            </div>
+                            <div id="sc_custom_memory_role_row" class="sc-setting-row">
+                                <label for="sc_custom_memory_role">
+                                    <span>Memory Role</span>
+                                    <small class="sc-hint">The message role your memory is injected as when you pick In Chat or In Prompt.</small>
+                                </label>
+                                <select id="sc_custom_memory_role" class="text_pole" data-sc-setting="customMemoryRole">
+                                    <option value="system">System</option>
+                                    <option value="user">User</option>
+                                    <option value="assistant">Assistant</option>
+                                </select>
+                            </div>
+                            <div id="sc_custom_memory_depth_row" class="sc-setting-row" style="display: none;">
+                                <label for="sc_custom_memory_depth">
+                                    <span>Chat Depth</span>
+                                    <small class="sc-hint">How many messages back memory is inserted when you pick In Chat.</small>
+                                </label>
+                                <input id="sc_custom_memory_depth" type="number" class="text_pole" min="0" max="10000" step="1" data-sc-setting="customMemoryDepth" data-sc-type="number" />
+                            </div>
+                        </div>
+                        <div id="sc_macro_memory_note" class="sc-note" style="display: none;">
+                            <span class="fa-solid fa-circle-info"></span>
+                            <small>Macro Only exposes <code>{{summaryception_memory}}</code> and skips direct prompt injection.</small>
                         </div>
                     </div>
-
-                    <!-- Turn Settings -->
-                    <h4 class="sc-section-title">📖 Verbatim Turn Settings</h4>
-
-                    <div class="sc-row">
-                        <label for="sc_verbatim_turns">
-                            <span>Verbatim Assistant Turns to Keep</span>
-                            <small class="sc-hint">Recent assistant turns sent word-for-word. Older ones are summarized.</small>
+                </section>
+            </div>
+            <div class="sc-tab-panel" role="tabpanel" data-sc-panel="prompts">
+                <section class="sc-section sc-prompt-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-pen-to-square"></span>
+                            Prompts
+                        </h4>
+                    </div>
+                    <small class="sc-help-text">Edit Layer 0 summarization prompts and Layer 1+ promotion prompts.</small>
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_injection_template">
+                            <span>Injection Wrapper Template</span>
+                            <small class="sc-hint">Put <code>{{summary}}</code> where you want the combined summary block.</small>
                         </label>
-                        <div class="sc-slider-row">
-                            <input type="range" id="sc_verbatim_turns" min="1" max="50" step="1" />
-                            <span id="sc_verbatim_turns_val" class="sc-val">10</span>
+                        <textarea id="sc_injection_template" class="text_pole sc-textarea" rows="3" data-sc-setting="injectionTemplate"></textarea>
+                        <div class="sc-button-row sc-button-row-split">
+                            <button id="sc_insert_recall_template" class="menu_button" type="button" title="Replace the template with a sample that repeats the memory block for stronger recall.">
+                                <i class="fa-solid fa-repeat"></i>
+                                <span>Recall-Repeat Sample</span>
+                            </button>
+                            <button id="sc_restore_injection_template" class="menu_button" type="button" title="Restore the default Injection Wrapper Template.">
+                                <i class="fa-solid fa-rotate-left"></i>
+                                <span>Restore Default</span>
+                            </button>
                         </div>
                     </div>
-
-                    <div class="sc-row">
-                        <label for="sc_turns_per_summary">
-                            <span>Turns per Summary Batch</span>
-                            <small class="sc-hint">When limit is exceeded, this many oldest turns are summarized together into one snippet.</small>
-                        </label>
-                        <div class="sc-slider-row">
-                            <input type="range" id="sc_turns_per_summary" min="1" max="20" step="1" />
-                            <span id="sc_turns_per_summary_val" class="sc-val">3</span>
-                        </div>
+                    <div class="sc-prompt-segment" role="tablist" aria-label="Prompt editor">
+                        <button class="sc-prompt-segment-button active" type="button" role="tab" aria-selected="true" data-sc-prompt-tab="layer0">
+                            <i class="fa-solid fa-layer-group"></i>
+                            <span>Layer 0</span>
+                        </button>
+                        <button class="sc-prompt-segment-button" type="button" role="tab" aria-selected="false" data-sc-prompt-tab="promotion">
+                            <i class="fa-solid fa-code-merge"></i>
+                            <span>Layer 1+</span>
+                        </button>
+                        <button class="sc-prompt-segment-button" type="button" role="tab" aria-selected="false" data-sc-prompt-tab="auditor">
+                            <i class="fa-solid fa-clipboard-check"></i>
+                            <span>Auditor</span>
+                        </button>
                     </div>
-
-                    <hr class="sc-divider" />
-
-                    <!-- Layer Settings -->
-                    <h4 class="sc-section-title">🔄 Layer Settings (the "ception")</h4>
-
-                    <div class="sc-row">
-                        <label for="sc_snippets_per_layer">
-                            <span>Max Snippets per Layer</span>
-                            <small class="sc-hint">When exceeded, oldest snippets are promoted (re-summarized) into a deeper layer.</small>
+                    <div class="sc-prompt-pane active" role="tabpanel" data-sc-prompt-panel="layer0">
+                    <small class="sc-help-text">Used for raw chat to Layer 0 summaries and Layer 0 regeneration.</small>
+                    <div class="sc-setting-row">
+                        <label for="sc_summarizer_system_prompt_preset">
+                            <span>Layer 0 System Preset</span>
                         </label>
-                        <div class="sc-slider-row">
-                            <input type="range" id="sc_snippets_per_layer" min="3" max="100" step="1" />
-                            <span id="sc_snippets_per_layer_val" class="sc-val">20</span>
-                        </div>
-                    </div>
-
-                    <div class="sc-row">
-                        <label for="sc_snippets_per_promotion">
-                            <span>Snippets per Promotion</span>
-                            <small class="sc-hint">How many oldest snippets merge together when promoting to the next layer.</small>
-                        </label>
-                        <div class="sc-slider-row">
-                            <input type="range" id="sc_snippets_per_promotion" min="2" max="20" step="1" />
-                            <span id="sc_snippets_per_promotion_val" class="sc-val">2</span>
-                        </div>
-                    </div>
-
-                    <div class="sc-row">
-                        <label for="sc_max_layers">
-                            <span>Maximum Layer Depth</span>
-                            <small class="sc-hint">How many recursive layers of summarization are allowed.</small>
-                        </label>
-                        <div class="sc-slider-row">
-                            <input type="range" id="sc_max_layers" min="1" max="10" step="1" />
-                            <span id="sc_max_layers_val" class="sc-val">5</span>
-                        </div>
-                    </div>
-
-                    <hr class="sc-divider" />
-
-                    <!-- Prompts -->
-                    <h4 class="sc-section-title">✏️ Summarizer Prompts</h4>
-
-                    <div class="sc-row">
-                        <label for="sc_summarizer_system_prompt">
-                            <span>System Prompt</span>
-                        </label>
-                        <textarea id="sc_summarizer_system_prompt" class="text_pole sc-textarea" rows="3"></textarea>
-                    </div>
-
-                    <div class="sc-setting-item">
-                        <label for="sc_prompt_preset">
-                            <small>Prompt Preset</small>
-                        </label>
-                        <select id="sc_prompt_preset" class="text_pole">
-                            <option value="narrative">Narrative State (Default)</option>
-                            <option value="gamestate">Game State</option>
+                        <select id="sc_summarizer_system_prompt_preset" class="text_pole" data-sc-setting="summarizerSystemPromptPreset">
+                            <option value="narrative">Default</option>
                             <option value="custom">Custom</option>
                         </select>
                     </div>
-
-                    <!-- Custom Prompt Management -->
-                    <div id="sc_custom_prompt_manager" class="sc-custom-prompt-manager" style="display: none;">
-                        <div class="sc-custom-prompt-row">
-                            <div class="sc-custom-prompt-slots">
-                                <label for="sc_custom_prompt_slot">
-                                    <small>Saved Custom Prompts</small>
-                                </label>
-                                <div class="sc-custom-prompt-slot-row">
-                                    <select id="sc_custom_prompt_slot" class="text_pole">
-                                        <option value="">-- Load a saved prompt --</option>
-                                    </select>
-                                    <button id="sc_custom_prompt_load" class="menu_button" title="Load selected prompt">
-                                        <i class="fa-solid fa-folder-open"></i>
-                                    </button>
-                                    <button id="sc_custom_prompt_delete_slot" class="menu_button menu_button_danger" title="Delete selected prompt">
-                                        <i class="fa-solid fa-trash"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="sc-custom-prompt-actions">
-                                <div class="sc-custom-prompt-save-row">
-                                    <input id="sc_custom_prompt_name" type="text" class="text_pole" placeholder="Prompt name..." />
-                                    <button id="sc_custom_prompt_save" class="menu_button" title="Save current prompt">
-                                        <i class="fa-solid fa-floppy-disk"></i> Save
-                                    </button>
-                                </div>
-                                <div class="sc-custom-prompt-io-row">
-                                    <button id="sc_custom_prompt_export" class="menu_button" title="Export current prompt as .txt">
-                                        <i class="fa-solid fa-file-export"></i> Export
-                                    </button>
-                                    <button id="sc_custom_prompt_import" class="menu_button" title="Import prompt from .txt">
-                                        <i class="fa-solid fa-file-import"></i> Import
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_summarizer_system_prompt">
+                            <span>Layer 0 System Prompt</span>
+                        </label>
+                        <textarea id="sc_summarizer_system_prompt" class="text_pole sc-textarea" rows="3" data-sc-setting="summarizerSystemPrompt"></textarea>
                     </div>
-
-                    <div class="sc-row">
+                    <div class="sc-setting-row">
+                        <label for="sc_prompt_preset">
+                            <span>Layer 0 User Preset</span>
+                        </label>
+                        <select id="sc_prompt_preset" class="text_pole" data-sc-setting="promptPreset">
+                            <option value="narrative">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-primary">
                         <label for="sc_summarizer_user_prompt">
-                            <span>User Prompt (Turn → Snippet & Layer Promotion)</span>
+                            <span>Layer 0 User Prompt</span>
                             <small class="sc-hint">
-                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> (that layer's existing snippets) <code>{{story_txt}}</code> (passage to summarize)
+                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> <code>{{story_txt}}</code>
+                            </small>
+                            <small class="sc-hint">
+                                Custom Layer 0 prompts must output a <code>&lt;narrative&gt;</code> envelope followed by a <code>current_date_time</code> line. Anything you leave out is gone, and newer verbatim chat overrides the compressed history. If the model cannot comply, it must answer only <code>&lt;declined&gt;reason&lt;/declined&gt;</code>; the answer is rejected and retried, never stored.
                             </small>
                         </label>
-                        <textarea id="sc_summarizer_user_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="10"></textarea>
+                        <textarea id="sc_summarizer_user_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="10" data-sc-setting="summarizerUserPrompt"></textarea>
                     </div>
-
-                    <div class="sc-row">
-                        <label for="sc_injection_template">
-                            <span>Injection Wrapper Template</span>
-                            <small class="sc-hint">Wraps the assembled block. Use <code>{{summary}}</code> for the combined text.</small>
+                    <div class="sc-setting-row">
+                        <label for="sc_summarizer_repair_prompt_preset">
+                            <span>Layer 0 Repair Preset</span>
                         </label>
-                        <textarea id="sc_injection_template" class="text_pole sc-textarea" rows="3"></textarea>
+                        <select id="sc_summarizer_repair_prompt_preset" class="text_pole" data-sc-setting="summarizerRepairPromptPreset">
+                            <option value="narrative">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
                     </div>
-
-                    <hr class="sc-divider" />
-
-                    <!-- Strip Patterns -->
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_summarizer_repair_prompt">
+                            <span>Layer 0 Repair Prompt</span>
+                            <small class="sc-hint">
+                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> <code>{{story_txt}}</code>
+                            </small>
+                        </label>
+                        <textarea id="sc_summarizer_repair_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="8" data-sc-setting="summarizerRepairPrompt"></textarea>
+                    </div>
+                    </div>
+                    <div class="sc-prompt-pane" role="tabpanel" data-sc-prompt-panel="promotion" hidden>
+                    <small class="sc-help-text">Used when consolidating lower-layer memories into deeper meta-summaries.</small>
+                    <div class="sc-setting-row">
+                        <label for="sc_promotion_system_prompt_preset">
+                            <span>Layer 1+ System Preset</span>
+                        </label>
+                        <select id="sc_promotion_system_prompt_preset" class="text_pole" data-sc-setting="promotionSystemPromptPreset">
+                            <option value="narrative">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_promotion_system_prompt">
+                            <span>Promotion System Prompt</span>
+                        </label>
+                        <textarea id="sc_promotion_system_prompt" class="text_pole sc-textarea" rows="3" data-sc-setting="promotionSystemPrompt"></textarea>
+                    </div>
+                    <div class="sc-setting-row">
+                        <label for="sc_promotion_prompt_preset">
+                            <span>Layer 1+ User Preset</span>
+                        </label>
+                        <select id="sc_promotion_prompt_preset" class="text_pole" data-sc-setting="promotionPromptPreset">
+                            <option value="narrative">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-primary">
+                        <label for="sc_promotion_user_prompt">
+                            <span>Promotion User Prompt</span>
+                            <small class="sc-hint">
+                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> <code>{{story_txt}}</code>
+                            </small>
+                            <small class="sc-hint">
+                                <code>{{story_txt}}</code> is the lower-layer memory; <code>{{context_str}}</code> is the existing deeper memory.
+                            </small>
+                            <small class="sc-hint">
+                                Custom promotion prompts should give you one narrative paragraph only. State gets merged separately.
+                            </small>
+                        </label>
+                        <textarea id="sc_promotion_user_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="10" data-sc-setting="promotionUserPrompt"></textarea>
+                    </div>
+                    <div class="sc-setting-row">
+                        <label for="sc_promotion_repair_prompt_preset">
+                            <span>Layer 1+ Repair Preset</span>
+                        </label>
+                        <select id="sc_promotion_repair_prompt_preset" class="text_pole" data-sc-setting="promotionRepairPromptPreset">
+                            <option value="narrative">Default</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_promotion_repair_prompt">
+                            <span>Layer 1+ Repair Prompt</span>
+                            <small class="sc-hint">
+                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> <code>{{story_txt}}</code>
+                            </small>
+                        </label>
+                        <textarea id="sc_promotion_repair_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="8" data-sc-setting="promotionRepairPrompt"></textarea>
+                    </div>
+                    </div>
+                    <div class="sc-prompt-pane" role="tabpanel" data-sc-prompt-panel="auditor" hidden>
+                    <small class="sc-help-text">Used when rewriting the continuity state after each audited exchange.</small>
+                    <div class="sc-setting-row">
+                        <label for="sc_auditor_system_prompt_preset">
+                            <span>Auditor System Preset</span>
+                        </label>
+                        <select id="sc_auditor_system_prompt_preset" class="text_pole" data-sc-setting="auditorSystemPromptPreset">
+                            <option value="continuity">Continuity</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-secondary">
+                        <label for="sc_auditor_system_prompt">
+                            <span>Auditor System Prompt</span>
+                        </label>
+                        <textarea id="sc_auditor_system_prompt" class="text_pole sc-textarea" rows="3" data-sc-setting="auditorSystemPrompt"></textarea>
+                    </div>
+                    <div class="sc-setting-row">
+                        <label for="sc_auditor_prompt_preset">
+                            <span>Auditor User Preset</span>
+                        </label>
+                        <select id="sc_auditor_prompt_preset" class="text_pole" data-sc-setting="auditorPromptPreset">
+                            <option value="continuity">Continuity</option>
+                            <option value="custom">Custom</option>
+                        </select>
+                    </div>
+                    <div class="sc-row sc-prompt-primary">
+                        <label for="sc_auditor_user_prompt">
+                            <span>Auditor User Prompt</span>
+                            <small class="sc-hint">
+                                Variables: <code>{{player_name}}</code> <code>{{context_str}}</code> <code>{{story_txt}}</code>
+                            </small>
+                        </label>
+                        <textarea id="sc_auditor_user_prompt" class="text_pole sc-textarea sc-textarea-tall" rows="10" data-sc-setting="auditorUserPrompt"></textarea>
+                    </div>
+                    </div>
+                </section>
+            </div>
+            <div class="sc-tab-panel" role="tabpanel" data-sc-panel="diagnostics">
+                <section class="sc-section">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-screwdriver-wrench"></span>
+                            Cleanup And Diagnostics
+                        </h4>
+                    </div>
                     <div class="sc-row">
                         <label for="sc_strip_patterns">
-                            <span>Strip Patterns (one per line)</span>
-                            <small class="sc-hint">Tags and prefixes to remove from summarizer output. Handles reasoning model artifacts.</small>
+                            <span>Strip Patterns</span>
+                            <small class="sc-hint">One regex pattern per line.</small>
                         </label>
-                        <textarea id="sc_strip_patterns" class="text_pole sc-textarea" rows="4"></textarea>
+                        <textarea id="sc_strip_patterns" class="text_pole sc-textarea" rows="4" data-sc-setting="stripPatterns" data-sc-type="lines"></textarea>
                     </div>
-
-                    <hr class="sc-divider" />
-
-                    <!-- Debug -->
-                    <div class="sc-row">
-                        <label class="checkbox_label" for="sc_debug_mode">
-                            <input type="checkbox" id="sc_debug_mode" />
-                            <span>Debug Mode (verbose console logs)</span>
+                    <div class="sc-toggle-list">
+                        <label class="checkbox_label sc-toggle-row" for="sc_debug_mode">
+                            <span class="sc-toggle-icon fa-solid fa-bug"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Debug Mode</span>
+                                <small class="sc-hint">Dumps verbose logs to the console.</small>
+                            </span>
+                            <input type="checkbox" id="sc_debug_mode" data-sc-setting="debugMode" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_trace_mode">
+                            <span class="sc-toggle-icon fa-solid fa-route"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Trace Mode</span>
+                                <small class="sc-hint">Detailed flow logs to the console. Needs Debug Mode on.</small>
+                            </span>
+                            <input type="checkbox" id="sc_trace_mode" data-sc-setting="traceMode" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_prompt_input_log_mode">
+                            <span class="sc-toggle-icon fa-solid fa-terminal"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Log LLM Inputs</span>
+                                <small class="sc-hint">Prints the full final system and user content sent to the summarizer in the F12 console.</small>
+                            </span>
+                            <input type="checkbox" id="sc_prompt_input_log_mode" data-sc-setting="promptInputLogMode" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_prompt_output_log_mode">
+                            <span class="sc-toggle-icon fa-solid fa-reply"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Log LLM Outputs</span>
+                                <small class="sc-hint">Prints cleaned summaries and errors in the F12 console.</small>
+                            </span>
+                            <input type="checkbox" id="sc_prompt_output_log_mode" data-sc-setting="promptOutputLogMode" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_continuity_state_log_mode">
+                            <span class="sc-toggle-icon fa-solid fa-timeline"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Log Continuity State</span>
+                                <small class="sc-hint">Prints each Continuity State audit in the F12 console.</small>
+                            </span>
+                            <input type="checkbox" id="sc_continuity_state_log_mode" data-sc-setting="continuityStateLogMode" />
+                        </label>
+                        <label class="checkbox_label sc-toggle-row" for="sc_continuity_state_log_full_mode">
+                            <span class="sc-toggle-icon fa-solid fa-code"></span>
+                            <span class="sc-toggle-copy">
+                                <span class="sc-toggle-title">Log Full Continuity State</span>
+                                <small class="sc-hint">Needs Log Continuity State on. Prints the full Continuity State JSON instead of the change summary.</small>
+                            </span>
+                            <input type="checkbox" id="sc_continuity_state_log_full_mode" data-sc-setting="continuityStateLogFullMode" />
                         </label>
                     </div>
-
-                    <div class="sc-row">
-                        <label class="checkbox_label" for="sc_trace_mode">
-                            <input type="checkbox" id="sc_trace_mode" />
-                            <span>Trace Mode (detailed flow logs)</span>
-                        </label>
-                        <small class="sc-hint">Requires Debug Mode to be enabled.</small>
+                </section>
+                <section class="sc-section sc-danger-zone">
+                    <div class="sc-section-header">
+                        <h4 class="sc-section-title">
+                            <span class="fa-solid fa-triangle-exclamation"></span>
+                            Maintenance
+                        </h4>
                     </div>
-
-                    <hr class="sc-divider" />
-
-                    <!-- Reset defaults -->
                     <div class="sc-button-row">
                         <button id="sc_reset_defaults" class="menu_button">
-                            <i class="fa-solid fa-arrow-rotate-left"></i> Reset to Defaults
+                            <i class="fa-solid fa-arrow-rotate-left"></i>
+                            <span>Reset</span>
+                        </button>
+                        <button id="sc_clear_memory" class="menu_button menu_button_danger">
+                            <i class="fa-solid fa-trash"></i>
+                            <span>Clear</span>
                         </button>
                     </div>
-
-                </div>
+                </section>
             </div>
-
+            </div>
         </div>
     </div>
 </div>

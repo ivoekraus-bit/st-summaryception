@@ -1,305 +1,233 @@
-# 🧠 Summaryception
+# Summaryception
 
-### Layered Recursive Memory for SillyTavern
+Layered recursive memory for SillyTavern.
 
-> Your AI remembers **thousands of turns** in under **20k tokens**. No context bloat. No lost plot threads. No compromises.
+Summaryception is for long roleplay chats that should remember what happened without shoving the whole backstory into every prompt. It runs as a plain browser extension inside [SillyTavern](https://github.com/SillyTavern/SillyTavern). No build step, no server, no database.
 
-Summaryception is a non-destructive, context-aware memory system for [SillyTavern](https://github.com/SillyTavern/SillyTavern) that replaces brute-force context stuffing with intelligent layered summarization. It keeps your most recent turns verbatim while compressing older conversation into ultra-compact summary snippets — organized in recursive layers that scale indefinitely.
+The short version: recent chat stays verbatim. Older chat becomes compact memory. The original messages stay in the chat UI, but Summaryception hides them from the model once they are covered by memory.
 
----
+## Why this exists
 
-## ✨ The Problem
+Long chats usually fail in one of two boring ways.
 
-Every roleplayer hits the same wall:
+You keep too much raw chat, so every generation drags a huge pile of old prose through the context window. Or you keep one normal summary, watch it blur details together, and start adding more raw chat again to compensate.
 
-| Approach | What happens |
-|---|---|
-| **No summary** | Context fills up → hard truncation → everything before the cutoff is **gone forever** |
-| **Basic summarization** | Lossy single summary → important details vanish → you compensate by keeping 20+ verbatim turns → context still bloats |
-| **More verbatim turns** | 20 turns × 1,500 tokens = 30k tokens of mostly atmospheric prose the LLM has to process → attention degrades → coherence drops anyway |
+Summaryception takes the other route. It summarizes older chat in small pieces, then summarizes those summaries again when they pile up. The result is a memory stack: recent text at the bottom, compact turn summaries above it, deeper summaries above those.
 
-The conventional wisdom — *"keep more raw turns"* — is a band-aid for bad compression.
-
-## 💡 The Solution
-
-Summaryception flips the approach: **compress aggressively, lose nothing.**
-
-A context-aware summarizer prompt examines each batch of turns against what's *already been summarized*, outputting only the **narrative delta** — new plot points, state changes, character decisions. Nothing repeated, nothing lost.
-
-**Real example** — 3 turns, ~5,200 raw tokens, compressed to:
-
-> *Alina kisses Lodactio; he reciprocates; she grows to human size, straddling him; she squeezes his crotch and intends to undo his pants.*
-
-**27 tokens. 125:1 compression. Every plot-relevant beat preserved.**
-
-And because each snippet is written with knowledge of all previous snippets, they get *more efficient over time* — the summarizer doesn't re-establish characters, settings, or relationships that are already recorded. Early snippets might be 40 tokens. By snippet 10, you're seeing 15-token summaries.
-
----
-
-## 🔄 How It Works
-
-```
-YOUR CHAT (e.g., 200 turns)
-│
-│  Turns 1-180: Ghosted (hidden from LLM, still readable by you)
-│  Turns 181-200: Kept VERBATIM (7 most recent assistant turns)
-│
-│  The ghosted turns have been compressed into:
-│
-│  ┌──────────────────────────────────────────┐
-│  │  LAYER 2 (Deep Memory)                   │
-│  │  Ultra-compressed summaries of Layer 1   │
-│  │  Each covers ~27 turns                   │
-│  ├──────────────────────────────────────────┤
-│  │  LAYER 1 (Meta-Summaries)                │
-│  │  Compressed summaries of Layer 0         │
-│  │  Each covers ~9 turns                    │
-│  ├──────────────────────────────────────────┤
-│  │  LAYER 0 (Turn Summaries)                │
-│  │  Direct summaries of conversation turns  │
-│  │  Each covers ~3 turns                    │
-│  ├──────────────────────────────────────────┤
-│  │  VERBATIM TURNS (most recent 7)          │
-│  │  Sent word-for-word to the LLM           │
-│  └──────────────────────────────────────────┘
-│
-│  Total context: ~12k tokens
-│  Total narrative coverage: EVERYTHING
+```text
+Current chat
+|
+|  Older messages: ghosted from the model, still visible to you
+|  Recent messages: sent word for word
+|
+|  Injected memory:
+|
+|  Layer 2+  deep memory from promoted summaries
+|  Layer 1   merged Layer 0 summaries
+|  Layer 0   direct summaries of chat turns
+|  Verbatim  the live recent window
 ```
 
-### The "Ception" — Recursive Layer Promotion
+That sounds abstract until you hit a 2,000 message chat and the model still remembers who promised what, who is injured, where the party left the key, and which subplot was quietly waiting in the corner.
 
-When a layer fills up (default: 30 snippets), the oldest snippets are promoted to the next deeper layer:
+## What it does
 
-1. **Seed promotion** — The very first time a deeper layer opens, the oldest snippet is promoted **directly** as a seed, no LLM call, preserving maximum information as the foundation for that layer.
-2. **Subsequent promotions** — Additional overflow snippets (default: 3 at a time) are summarized together against the destination layer's existing content (including the seed) as prior context.
-3. **Cascade** — If the destination layer also fills up, the process repeats, creating Layer 2, Layer 3, etc.
+- Keeps a rolling verbatim window for recent chat.
+- Compresses older chat into Layer 0 memories.
+- Promotes older Layer 0 memories into deeper layers when the layer gets crowded.
+- Keeps each memory a single `<narrative>` envelope with a trailing `current_date_time` scene-time line.
+- Ghosts summarized messages with SillyTavern's `/hide`, so they stop reaching the model but remain readable in the UI.
+- Injects the assembled memory through SillyTavern extension prompts, or exposes it as `{{summaryception_memory}}` for custom prompt layouts.
+- Runs background summarization without mutating the prompt during an active generation.
+- Optional Continuity Auditor keeps a live game-state in an `<active_continuity>` block next to the injected memory.
 
-Each layer multiplies the turn coverage per snippet while maintaining coherent narrative continuity.
+## Install
 
----
+Requirements: the latest stable SillyTavern release.
 
-## 📊 The Math
+In SillyTavern:
 
-*Using ~70 tokens per snippet as a working median. Actual snippets range from ~30 tokens (late-layer, minimal delta) to ~100 tokens (early context establishment). Your results will vary based on narrative density.*
+1. Open Extensions.
+2. Choose Install Extension.
+3. Paste `https://github.com/vadash/Extension-Summaryception`.
+4. Install, then open Summaryception in extension settings.
 
-### Default Settings (30 snippets/layer, 3 turns/batch, 3 snippets/promotion)
+## First setup
 
-Each promotion merges 3 snippets into 1, so each layer multiplies turn coverage by 3×.
+Start with Easy mode unless you already know what you want to tune.
 
-| Layer | Snippets | Turns per Snippet | Total Turns Covered | ~Tokens |
-|---|---|---|---|---|
-| Verbatim | 7 turns | — | 7 | ~5,000 |
-| Layer 0 | 30 | 3 | 90 | ~2,100 |
-| Layer 1 | 30 | 9 | 270 | ~2,100 |
-| Layer 2 | 30 | 27 | 810 | ~2,100 |
-| Layer 3 | 30 | 81 | 2,430 | ~2,100 |
-| Layer 4 | 30 | 243 | 7,290 | ~2,100 |
-| **Total** | — | — | **~10,897 turns** | **~15,500 tokens** |
+Set Fast Summarizer to your normal API or a SillyTavern Connection Profile. This model turns raw chat into Layer 0 summaries, so it should be cheap, fast, and good enough at extracting facts.
 
-> **Nearly 11,000 turns of narrative history in ~16k tokens.**
+Smart Deep Memory is optional. Point it at a stronger model if you want Layer 1+ merges to read better than what the raw-chat summarizer produces.
 
-### Conservative Estimate (smaller snippets at deeper layers)
+Then pick a memory mode. Your provider's cache rules decide whether Prefix Cache saves you money or just makes the prompt fatter.
 
-In practice, deeper layers produce shorter snippets as they compress already-compressed material. A more realistic breakdown:
+### Balanced
 
-| Layer | Snippets | Turns per Snippet | ~Tokens/Snippet | ~Layer Tokens |
-|---|---|---|---|---|
-| Verbatim | 7 turns | — | — | ~5,000 |
-| Layer 0 | 30 | 3 | ~80 | ~2,400 |
-| Layer 1 | 30 | 9 | ~70 | ~2,100 |
-| Layer 2 | 30 | 27 | ~60 | ~1,800 |
-| Layer 3 | 30 | 81 | ~50 | ~1,500 |
-| Layer 4 | 30 | 243 | ~40 | ~1,200 |
-| **Total** | — | — | — | **~14,000 tokens** |
+The one to pick unless you have a reason not to. Balanced keeps recent chat near the 22k verbatim budget and summarizes overflow into a 6k queued range as it arrives. The goal is simple: keep the model inside a useful context range without relying on provider caching.
 
-> **~11,000 turns in ~14k tokens.** The raw conversation? Roughly **15–25 million tokens.** That's a compression ratio approaching **1,000:1**.
+This mode works everywhere and keeps context size fairly steady. If cached input is not much cheaper than normal input, stop here. You are done.
 
-For comparison, most roleplayers hit 17,500 tokens by **turn 10** with verbatim context. Summaryception uses the same budget to remember **eleven thousand**.
+### Prefix Cache
 
----
+Use Prefix Cache with the normal prompt caches most providers offer. It holds a 36k live span: 20k verbatim plus a 16k queued range, so more of each request can stay cached.
 
-## 👻 Non-Destructive Ghost Mode
+Suppose the next request keeps the same start but changes the tail. A prefix cache can still reuse that unchanged start. Your usual lorebooks work normally; no migration or special outlet is needed.
 
-Summaryception never deletes your messages. Summarized turns are **ghosted** — hidden from the LLM context but fully visible and readable in your chat UI. Scroll up anytime to read the original prose.
+Pick this mode when cached input is cheaper and your provider supports partial prefix reuse. The tradeoff is a larger prompt, and a summary flush also hands the provider a new prefix to cache.
 
-- 👻 Ghosted messages show a system icon in the chat
-- Clear Memory unghosts everything instantly
-- Your chat file is never modified destructively
+One more knob matters here and only here. The cache TTL decides when Prefix Cache considers the provider cache expired: once the chat has sat idle longer than the TTL (default 30 minutes), loading it triggers a stale-cache suggestion to Force Summarize first. The next message pays full input price either way, so summarizing first avoids paying for the same tokens twice.
 
----
+The defaults are intentionally conservative: 22k recent verbatim tokens, 10k injected memory, 280-token Layer 0 targets, and promotion after old memories stack up.
 
-## 🧹 Clean Prompt Isolation
+## Controls you will actually use
 
-When Summaryception calls the summarizer, it **temporarily disables all Chat Completion preset toggles** — your creative writing prompts, character instructions, scenario text, everything. The summarizer sees only its own system prompt and the passage to summarize.
+Force Summarize processes eligible old chat now instead of waiting for the background worker.
 
-This means:
-- ✅ No 4k tokens of story-writing instructions competing with a 200-token summarization task
-- ✅ Budget models perform like premium models on the focused extraction task
-- ✅ Your preset is restored instantly after, whether the call succeeds or fails
+Slop Breaker is for the moment when the model starts repeating itself or gets stuck in a bad format. It summarizes through the current live context cut, ghosts that text, and forces the next generation to work from compact memory instead of stale phrasing.
 
----
+Stop cancels the current summarization run.
 
-## 🔁 Context-Aware Incremental Summaries
+Clear removes Summaryception memory for the current chat and unghosts messages Summaryception owns. It does not delete chat messages.
 
-This is the core innovation. The summarizer prompt receives:
+## Advanced mode
 
-| Variable | Contents |
-|---|---|
-| `{{player_name}}` | Your active persona name |
-| `{{context_str}}` | **That layer's existing summaries** — everything already recorded |
-| `{{story_txt}}` | The new passage to summarize |
+Advanced mode exposes the knobs Easy mode hides:
 
-The instruction: *"Summarize only necessary elements to coherently continue the Prior Context. Exclude anything already covered."*
+- Verbatim and injected memory token budgets.
+- Layer 0 batch sizes and source token caps.
+- Memories per layer and memories per merge.
+- Memory placement: Before Prompt, In Prompt, In Chat, or Macro Only.
+- Memory role: system, user, or assistant.
+- Separate prompts for Layer 0 summaries, Layer 1+ promotions, and repair attempts.
+- Regex cleanup, Chinese ideograph stripping, debug logs, trace logs, and prompt I/O logs.
 
-This means:
-- **Snippet 1** has to establish characters, setting, relationships (~80–100 tokens)
-- **Snippet 5** only records new events — characters and setting are established (~50–70 tokens)
-- **Snippet 10** is pure narrative delta — just what changed (~30–50 tokens)
-- **Layer promotions** work the same way — each deeper layer summarizes against its own existing content
+Macro Only is useful when your prompt already has a deliberate memory slot. Add `{{summaryception_memory}}` where you want the assembled memory to appear.
 
-Every summary is a **minimal diff**, not a redundant recap.
+## Connection routes
 
----
+Summaryception can use:
 
-## 🛡️ Resilient API Handling
+- SillyTavern's active main API.
+- SillyTavern Connection Profiles.
 
-- **Exponential backoff** with jitter for rate limits (429) and server errors (500/502/503/504)
-- **Retry-After header** respected when the server provides one
-- Retries up to 5 times with delays from 2s → 60s
-- **Failed batches are never ghosted** — turns stay visible for the next attempt
-- Network errors, timeouts, and empty responses are all handled gracefully
+There are three routes:
 
----
+- Layer 0 for new raw-chat summaries.
+- Merge for deeper Layer 1+ promotion work.
+- Fallback for retryable failures after the primary route gives up.
 
-## 📦 Backlog Detection
+OpenAI-compatible local endpoints may need SillyTavern's CORS proxy. Since v20, summarization tasks do not use presets, so it does not matter what your connection is linked to.
 
-Opening an existing chat with 100+ messages? Summaryception detects the backlog and offers you a choice:
+## Continuity Auditor
 
-| Option | What it does |
-|---|---|
-| **Process Entire Backlog** | Summarizes everything with a cancelable progress bar |
-| **Skip Backlog** | Ignores old turns, only tracks new ones going forward |
-| **Just One Batch** | Processes a single batch now, handles the rest incrementally |
+Everything above is narrative memory: prose about what happened. The Continuity Auditor is the other half. It is an opt-in background call that audits each finished reply in solo chats and keeps a live game-state: positions, relationship bonds, NPC agendas, secrets. Off by default.
 
-Progress is saved continuously — cancel anytime and pick up where you left off.
+Why bother? Without it, keeping the story straight is the main model's job. It spends its output re-stating who stands where, how the relationship shifted, and which agenda moved, and that bookkeeping crowds out the scene itself. The Auditor does that bookkeeping outside the main model and hands the result back as a compact block, so replies come out shorter and more focused on what is actually happening. The block describes the last audited reply, so it runs one message behind the live chat.
 
----
+Enable it under Continuity Auditor and give it a fast model. It runs after every reply, so latency matters more than brains here. Connection settings live under Models → Continuity Connections, separate from the summarizer routes: it inherits Layer 0 unless you point it elsewhere, and "Fall back to the Narrative Chain" lets it use the Layer 0 chain as last resort when both Auditor routes fail.
 
-## ⚙️ Configuration
+The game-state is four things:
 
-All settings are adjustable from the SillyTavern Extensions panel:
+- Scene and positioning: location, environment, posture, contact points, clothing.
+- Bonds: one per character pair, with Sparks and Grudge. A high enough bond shows a gate: hug, handhold, kiss, intimacy.
+- Agendas: each NPC's current task and step.
+- Notes: short GM remarks, with `[S]` marking secrets some characters do not know.
 
-| Setting | Default | Description |
-|---|---|---|
-| Verbatim Turns | 10 | Recent assistant turns kept word-for-word |
-| Turns per Batch | 3 | Oldest turns summarized together per trigger |
-| Snippets per Layer | 30 | Max snippets before promoting to next layer |
-| Snippets per Promotion | 3 | How many snippets merge on promotion |
-| Max Layers | 5 | Maximum recursion depth |
+The Auditor only reads and flags. All the math is done by code, and the result is stored on the audited reply as a checkpoint. The newest checkpoint is the live state.
 
-### Prompt Presets
+### What the model gets
 
-| Preset | Best For | Focus |
-|---|---|---|
-| **Narrative State** (default) | Character RP, drama, thrillers, romance | Interactions, emotions, relationships, atmosphere, subtext |
-| **Game State** | Roguelites, strategy, mechanical games | Plot points, quests, locations, interactables, state changes |
-| **Custom** | Your own prompt | Whatever you write |
+The live checkpoint is injected into the chat itself, near the newest messages, as a system block:
 
-Select a preset from the dropdown in Summary Prompts, or edit the prompt directly — it auto-switches to Custom.
+```text
+<active_continuity>
+[SCENE & POSITIONING]
+Location: Old mill - upstairs loft
+Environment: rain against the shutters, one lantern lit
+Physics: Mira sitting on the windowsill, feet off the floor
+Contact: Dave by the door, arms crossed
+Clothing: Mira barefoot, coat still wet
 
-Plus fully customizable:
-- 📝 Summarizer system prompt
-- 📝 Summarizer user prompt (with `{{player_name}}`, `{{context_str}}`, `{{story_txt}}` variables)
-- 📝 Injection wrapper template
+[RELATIONSHIP GATES]
+Mira & Dave: BOND +6 (Sparks: 2, Grudge: 0); Gate: handhold
 
----
+[SECRETS & ASYMMETRIC KNOWLEDGE]
+[S] Mira never actually lost the key
 
-## 🔌 Connection Settings
-
-Summaryception can use different backends for summarization, independent of your main chat connection:
-
-| Source | Description |
-|---|---|
-| **Default** | Uses SillyTavern's active connection — simplest setup |
-| **OpenAI Compatible** | Direct endpoint with URL, API key, and model — bypasses all ST formatting |
-| **Ollama** | Local Ollama instance with model browser |
-| **Connection Profile** | Uses an ST Connection Profile (⚠️ inherits preset formatting — may degrade summary quality) |
-
-> 💡 **Recommended:** Use **Default** or **OpenAI Compatible** for cleanest results. Connection Profiles inject preset formatting into summary requests, which can cause the model to roleplay instead of summarize.
-
----
-
-## 🗂️ Built-in Tools
-
-- **Layer Stats** — Live view of snippet counts per layer and ghosted message count
-- **Injection Preview** — See exactly what gets sent to the LLM
-- **Snippet Browser** — Browse, edit, regenerate, and delete individual snippets across all layers
-- **Export/Import** — Save and restore memory as JSON
-- **Force Summarize** — Manually trigger summarization
-- **Stop** — Abort any running summarization, progress saved
-- **Repair** — Find and fix orphaned hidden messages
-- **Slash Commands** — `/sc-status`, `/sc-preview`, `/sc-clear`
-
----
-
-## 📥 Installation
-
-### Requirements
-
-- **SillyTavern 1.16.0+** (release or staging). Older versions use an incompatible `generateRaw` signature and will not work correctly.
-
-### From SillyTavern UI
-1. Open **Extensions** → **Install Extension**
-2. Paste: `https://github.com/Lodactio/Extension-Summaryception`
-3. Click Install
-4. Find **🧠 Summaryception** in Extensions settings
-
-### Manual
-```bash
-cd SillyTavern/data/default-user/extensions/third-party/
-git clone https://github.com/Lodactio/Extension-Summaryception
+[ACTIVE AGENDAS & THREADS]
+- Mira: find out who paid the mercs (Step 2/5: active)
+- Dave: quiet about the second key
+</active_continuity>
 ```
-Restart SillyTavern and enable the extension.
 
----
+This is the real renderer's output shape: only non-empty sections appear, secret `[S]` notes get their own section, and ordinary GM notes render under agendas as active threads. Replies that have not been audited yet are covered by the last checkpoint, and the block says so until the Auditor catches up.
 
-## 🧠 Why This Works Better
+### The green check mark
 
-| | Traditional Summary | Summaryception |
-|---|---|---|
-| **Compression** | ~10:1, lossy | ~125:1 per snippet, lossless |
-| **Context at turn 100** | 30k+ tokens or truncated | ~10k tokens |
-| **Context at turn 1,000** | Impossible without truncation | ~13k tokens |
-| **Context at turn 10,000** | Literally impossible | ~16k tokens |
-| **Lost information** | Lots — hedged by keeping more raw turns | None — every state change is tracked |
-| **Coherence over time** | Degrades as context grows | Stable indefinitely |
-| **Works with budget models** | Poorly — needs powerful summarizer | Excellently — prompt does the heavy lifting |
+Every audited reply gets a green ✓ after the character name in chat. The newest one also shows a ●. That reply holds the live checkpoint the injected block comes from. Swipe or regenerate the last reply and its checkpoint is dropped, so the check vanishes until the new answer gets audited.
 
----
+### How it works with narrative memory
 
-## Community Forks
+The layers summarize the story. The Auditor tracks the state. One knows what happened, the other knows what is true right now, and they share nothing at runtime: separate routes, separate prompt.
 
-These forks extend Summaryception with specialized features. They use the same internal module name, so **install only one at a time** — your existing settings and per-chat memory will carry over.
+### Preset
 
-### [Per-Character Memory Banks](https://github.com/dogoo9/Extension-Summaryception) by dogoo9
+Try it with [ff_summaryception_5.5.0.json](docs/preset/ff_summaryception_5.5.0.json)
 
-Keeps separate summary memory for each character card in the same chat. Useful for group chats or stories where you switch between characters and don't want their memories bleeding together.
+## Slash commands
 
-### [Lorebook Ingestion](https://github.com/jeromehbonaparte-star/Extension-Summaryception-Lorebook) by Romuromylus
+`/sc-status` shows the current summarized boundary and layer counts.
 
-Automatically extracts stable facts (character traits, locations, items) from summaries and proposes them as World Info entries. Summaries handle events and state changes; lorebook entries handle things that should never be forgotten across layers. Includes a review queue so nothing gets written without your approval.
+`/sc-preview` prints the memory block that would be injected.
 
----
+`/sc-clear` clears Summaryception memory for the current chat and unghosts Summaryception-owned messages.
 
-## 🤝 Credits
+## Safety notes
 
-Built with frustration at context limits and love for long-form roleplay.
+Summaryception is designed to be non-destructive. Summaries live in chat metadata. Settings live in extension settings. Ghosting ownership is stored as stable message IDs in chat metadata, so the extension can tell its own hidden messages apart from messages you hid yourself.
 
-If this saves your 500-turn adventure from amnesia, consider starring the repo. ⭐
+If something looks off, use Clear or `/sc-clear`. That removes Summaryception's memory and ownership flags for the current chat, then unghosts the messages it owns.
 
----
+## Presets
 
-## 📄 License
+For default and prefix cache any preset works. I like this one https://rentry.org/freaky-frankenstein-presets
 
-AGPL-3.0
+## Version history
+
+Older major versions are still available as branches. Open SillyTavern's extension list and use the branch button beside Summaryception.
+
+<img src="img/how_to_switch_branch.png" width="700" alt="Branch button beside Summaryception in SillyTavern's extension list" />
+
+- **v24:** Continuity Auditor
+- **v23:** Closed most github issues
+- **v22:** Big code refactor
+
+## Troubleshooting
+
+Extension refuses to update: remove and install it again.
+
+Major updates can reset settings or misbehave: clear memories before updating and stick to the named branches.
+
+### Timestamps in bot replies
+
+Make sure each bot message contain timestamps! Exact format is not important. Some gaps are allowed, as long as it repeated once every 4-5 bot messages. Example prompt:
+
+```
+{{// Grounds scene with date, time, location, weather. Affected entire RP.}}{{trim}}
+
+<header_instructions>
+Start every response with:
+[ 🕰️ Time HH:MM AM/PM | 🗓️ Day # - 🗓️ DayOfWeek, Month DD, YYYY Era | 📍 Location - Specific Area | [WeatherEmoji] Weather, Temp °F ]
+
+Rules:
+- Time: Advance logically; execute skips for sleep, work, or travel.
+- Era: Use AD/BC or setting-appropriate fantasy era.
+- Location: General - Specific area. Update on movement.
+- NPCs: Physically react to weather, temp, and time (shiver, sweat, fatigue).
+</header_instructions>
+```
+
+## License
+
+AGPL-3.0-or-later. See [LICENSE](LICENSE).

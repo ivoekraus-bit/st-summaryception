@@ -1,0 +1,172 @@
+import { LOG_PREFIX } from '../foundation/constants.js';
+import {
+    isPromptInputLogEnabled,
+    isPromptLogEnabled,
+    isPromptOutputLogEnabled,
+    serializeError,
+} from '../foundation/logger.js';
+
+/**
+ * @returns {{ status: string, cleanedResult: string, error: Error | null }}
+ */
+export function createAttemptLogState() {
+    return {
+        status: 'failed',
+        cleanedResult: '',
+        error: null,
+    };
+}
+
+/**
+ * @param {{ status: string, cleanedResult: string, error: Error | null }} logState - Mutable log state
+ * @param {import('./request-series.js').AttemptResult} result - Attempt outcome
+ * @returns {void}
+ */
+export function updateAttemptLogState(logState, result) {
+    logState.status = getAttemptLogStatus(result);
+    logState.cleanedResult = result.text || '';
+    logState.error = result.status === 'completed' ? null : result.error || null;
+}
+
+function getAttemptLogStatus(result) {
+    if (result.status === 'completed') {
+        return 'success';
+    }
+    if (result.status === 'aborted') {
+        return 'aborted';
+    }
+    if (result.status === 'rejected') {
+        return result.reason || 'failed';
+    }
+    if (result.status === 'hard-failover') {
+        return 'hard-failover';
+    }
+    if (result.status === 'guard-stopped') {
+        return 'easy-context-guard';
+    }
+    return 'failed';
+}
+
+/**
+ * @param {object} p
+ * @param {string} p.label - Human-readable call label
+ * @param {string} p.routeLabel - Connection route label
+ * @param {number} p.attempt - Zero-based attempt number
+ * @param {string} p.status
+ * @param {number} p.durationMs
+ * @param {string} p.systemPrompt - System prompt sent to the summarizer
+ * @param {string} p.prompt - User prompt sent to the summarizer
+ * @param {string} p.cleanedResult - Cleaned summary text
+ * @param {Error | null} p.error - Attempt error
+ * @returns {void}
+ */
+export function logLlmAttemptTransaction({
+    label,
+    routeLabel,
+    attempt,
+    status,
+    durationMs,
+    systemPrompt,
+    prompt,
+    cleanedResult,
+    error: attemptError,
+}) {
+    if (!isPromptLogEnabled()) {
+        return;
+    }
+
+    const inputLogEnabled = isPromptInputLogEnabled();
+    const outputLogEnabled = isPromptOutputLogEnabled();
+    const title =
+        `${LOG_PREFIX} [LLM] ${label} - ${status.toUpperCase()} ` +
+        `(${(durationMs / 1000).toFixed(1)}s, ${routeLabel} attempt ${attempt + 1})`;
+
+    console.groupCollapsed(title);
+    try {
+        if (inputLogEnabled) {
+            console.log(
+                JSON.stringify(
+                    buildLlmInputLog({
+                        label,
+                        routeLabel,
+                        attempt,
+                        systemPrompt,
+                        prompt,
+                    }),
+                    null,
+                    2,
+                ),
+            );
+        }
+        if (outputLogEnabled) {
+            console.log(
+                JSON.stringify(
+                    buildLlmOutputLog({
+                        label,
+                        routeLabel,
+                        attempt,
+                        status,
+                        cleanedResult,
+                        attemptError,
+                    }),
+                    null,
+                    2,
+                ),
+            );
+        }
+    } finally {
+        console.groupEnd();
+    }
+}
+
+/**
+ * @param {object} p
+ * @param {string} p.label
+ * @param {string} p.routeLabel
+ * @param {number} p.attempt
+ * @param {string} p.systemPrompt
+ * @param {string} p.prompt
+ * @returns {object}
+ */
+function buildLlmInputLog({ label, routeLabel, attempt, systemPrompt, prompt }) {
+    return {
+        type: 'summaryception.llm.input.v1',
+        label,
+        route: routeLabel,
+        attempt: attempt + 1,
+        messages: [
+            { role: 'system', content: systemPrompt || '' },
+            { role: 'user', content: prompt || '' },
+        ],
+    };
+}
+
+/**
+ * @param {object} p
+ * @param {string} p.label
+ * @param {string} p.routeLabel
+ * @param {number} p.attempt
+ * @param {string} p.status
+ * @param {string} p.cleanedResult
+ * @param {Error | null} p.attemptError
+ * @returns {object}
+ */
+function buildLlmOutputLog({ label, routeLabel, attempt, status, cleanedResult, attemptError }) {
+    return {
+        type: 'summaryception.llm.output.v1',
+        label,
+        route: routeLabel,
+        attempt: attempt + 1,
+        status,
+        cleanedSummary: cleanedResult || '',
+        error: serializeAttemptError(attemptError),
+    };
+}
+
+/**
+ * @param {Error | null} error
+ * @returns {object|null}
+ */
+function serializeAttemptError(error) {
+    return error ? serializeError(error) : null;
+}
